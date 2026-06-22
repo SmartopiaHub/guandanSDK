@@ -1,0 +1,72 @@
+# ----------------------------------------------------------------------
+# HTTP Bot Configuration
+# ----------------------------------------------------------------------
+# Priority: environment variables > this config file > console prompts.
+# Leave a value empty / commented to be prompted at startup.
+#
+# Two keys are used during bot deployment:
+#   deployment_key  – sent BY the bot TO the lobby / game server
+#   invocation_key  – sent TO the bot FROM the game server (optional)
+
+http_bot:
+  # Network bind address (env: HTTP_BOT_HOST)
+  host: "127.0.0.1"
+
+  # Network bind port (env: HTTP_BOT_PORT); 0 = OS-assigned
+  port: 10001
+
+  # Deployment key the bot presents to the lobby / game server when
+  # registering or authenticating.  (env: HTTP_BOT_DEPLOYMENT_KEY)
+  deployment_key: ""
+
+  # Optional bot invocation key that the bot checks in
+  # Authorization: Bearer <key> on incoming requests.  This is the
+  # *bot invocation token* issued by the platform when the deployment
+  # is registered.  Leave empty to accept all incoming requests.
+  # (env: HTTP_BOT_INVOCATION_KEY; legacy alias: HTTP_BOT_API_KEY)
+  invocation_key: ""
+
+  # Publicly-reachable base URL, only needed when it differs from the
+  # bind address (e.g. running behind a reverse proxy or tunnel).
+  # (env: HTTP_BOT_PUBLIC_BASE_URL)
+  public_base_url: ""
+
+  # ---- Auto-registration fields (all optional) ----
+  # Bot provider ID for this deployment.  (env: BOT_PROVIDER_ID)
+  provider_id: ""
+
+  # Bot definition IDs this deployment supports.  (env: BOT_DEFINITION_IDS
+  # as comma-separated list, or BOT_DEFINITION_ID for a single value)
+  definition_ids: []
+
+  # Protocol versions this deployment supports.  (env: BOT_PROTOCOL_VERSIONS)
+  protocol_versions:
+    - "guandan-bot-v1"
+
+  # Maximum concurrent bot sessions.  (env: BOT_MAX_CONCURRENT_SESSIONS)
+  max_concurrent_sessions: 10
+
+  # Geographic region label (optional).  (env: BOT_REGION)
+  region: ""
+
+# ----------------------------------------------------------------------
+# WebSocket Bot Configuration
+# ----------------------------------------------------------------------
+websocket_bot:
+  # Game server WebSocket URL (env: GAME_SERVER_URL)
+  game_server_url: "ws://127.0.0.1:9001"
+
+  # Deployment key the bot presents to the game server when connecting.
+  # (env: WEBSOCKET_BOT_DEPLOYMENT_KEY)
+  deployment_key: ""
+
+# ----------------------------------------------------------------------
+# Lobby Server (for auto-registration)
+# ----------------------------------------------------------------------
+lobby:
+  # Base URL of the lobby server.  (env: LOBBY_URL)
+  url: "http://127.0.0.1:8686"
+
+  # Developer access token for authenticating to the lobby API.
+  # (env: LOBBY_ACCESS_TOKEN or DEVELOPER_ACCESS_TOKEN)
+  access_token: ""

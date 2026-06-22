@@ -1,0 +1,17 @@
+targets:
+  $default:
+    builders:
+      guandan_core|messageUnionBuilder:
+        generate_for:
+          - lib/src/message.dart
+
+
+# This must be present to declare your own builder
+builders:
+  messageUnionBuilder:
+    import: "package:guandan_core/builder.dart"
+    builder_factories: ["messageUnionBuilder"]
+    build_extensions: {".dart": [".message.g.dart"]}
+    auto_apply: none
+    build_to: source
+    #applies_builders: ["source_gen|combining_builder"]
