@@ -41,22 +41,6 @@ abstract class BotPlayer extends Player {
   /// Return a card in response to a tribute received
   PokerCard returnCard();
 
-  @Deprecated('Use receiveMessage instead')
-  void informTributeResult(TributeResult tributeResult) {
-    // do nothing
-  }
-
-  @Deprecated('Use receiveMessage instead')
-  void informTurnPlayed(Phase phase, Turn turn) {
-    // do nothing
-  }
-
-  @Deprecated('Use receiveMessage instead')
-  void informNewRound(Round newRound, PokerCardList dealtCards) {
-    // do nothing
-  }
-
-
   void receiveMessage(GameMessage message) {
     if (message is NewRoundMessage) {
       setCardsOnHand(PokerCardList.from(message.hand));
