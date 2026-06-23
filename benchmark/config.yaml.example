@@ -1,0 +1,42 @@
+# Guandan Auto-Test Configuration
+# ================================
+# The API key is a developer automation key.  Obtain one from the
+# Developer Center at https://www.zhiquguandan.com:
+#   Sign in → Developer Center → API Keys → Create Automation Key
+#     Name: benchmark    Environment: test    Scopes: test_games:create
+# Format: gdk_test_kid_<8-char-key-id>.<32-char-secret>
+auto_test_api_key: <your-api-key-here>
+
+# Lobby server base URL (required, do not change it, unless you have your own lobby server)
+lobby_url: https://www.zhiquguandan.com 
+
+# Number of rounds to complete in the test game (can be overridden with --num-rounds)
+num_rounds: 2
+
+# SSE event stream timeouts (seconds)
+total_timeout: 6000         # max time to wait for the entire test game
+heartbeat_timeout: 1200     # disconnect if no SSE event within this window
+
+# Bot assignments per seat (1-4).  All four seats are required.
+# Each entry supports:
+#   type: builtin        — use a platform built-in bot
+#     bot_code: basicBot | strongBot
+#   type: deployed       — use a deployed (third-party) bot
+#     deployment_id: <id>  (optional — auto-discover if omitted)
+#
+# Seat layout (standard 4-player Guandan):
+#   seat 1 ↔ seat 3  (red team)
+#   seat 2 ↔ seat 4  (blue team)
+bots:
+  seat_1:
+    type: builtin
+    bot_code: strongBot
+  seat_2:
+    type: builtin
+    bot_code: basicBot
+  seat_3:
+    type: builtin
+    bot_code: strongBot
+  seat_4:
+    type: builtin
+    bot_code: basicBot
