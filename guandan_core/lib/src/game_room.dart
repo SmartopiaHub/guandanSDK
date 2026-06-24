@@ -150,6 +150,11 @@ class GameRoomConfig{
   /// When `false` (default), no broadcast is sent.
   bool broadcastPlayerLeave;
 
+  /// The delay for bot actions to simulate human behavior, in milliseconds.
+  /// 0 means use the server default. Set to a positive value (e.g. 1000 for
+  /// 1 second) to override.
+  int botDelay;
+
   /// Whether the room has any time limits configured.
   bool get isTimed => timingConfig.isTimed;
 
@@ -186,7 +191,8 @@ class GameRoomConfig{
   GameRoomConfig({required this.requiredPlayers, this.acePassingEnabled=true, this.roomTier=0,
     this.tributeEnabled=true, this.bankerFirstWhenNoTribute=true, this.allowExtraTime=true,
      this.password, TimingConfig? timingConfig,
-     this.useBotNicknames = true, this.exposeBotCode = true, this.broadcastPlayerLeave = false}):
+     this.useBotNicknames = true, this.exposeBotCode = true, this.broadcastPlayerLeave = false,
+     this.botDelay = 0}):
     _timingConfig = timingConfig;
 
 
@@ -204,7 +210,8 @@ class GameRoomConfig{
         password = json['password'] as String?,
         useBotNicknames = json['use_bot_nicknames'] as bool? ?? true,
         exposeBotCode = json['expose_bot_code'] as bool? ?? true,
-        broadcastPlayerLeave = json['broadcast_player_leave'] as bool? ?? false;
+        broadcastPlayerLeave = json['broadcast_player_leave'] as bool? ?? false,
+        botDelay = json['bot_delay'] as int? ?? 0;
 
 
   /// Creates a copy with the given fields replaced.
@@ -220,6 +227,7 @@ class GameRoomConfig{
     bool? useBotNicknames,
     bool? exposeBotCode,
     bool? broadcastPlayerLeave,
+    int? botDelay,
   }) {
     return GameRoomConfig(
       requiredPlayers: requiredPlayers ?? this.requiredPlayers,
@@ -233,6 +241,7 @@ class GameRoomConfig{
       useBotNicknames: useBotNicknames ?? this.useBotNicknames,
       exposeBotCode: exposeBotCode ?? this.exposeBotCode,
       broadcastPlayerLeave: broadcastPlayerLeave ?? this.broadcastPlayerLeave,
+      botDelay: botDelay ?? this.botDelay,
     );
   }
 
@@ -249,6 +258,7 @@ class GameRoomConfig{
       'use_bot_nicknames': useBotNicknames,
       'expose_bot_code': exposeBotCode,
       'broadcast_player_leave': broadcastPlayerLeave,
+      'bot_delay': botDelay,
     };
   }
 }
