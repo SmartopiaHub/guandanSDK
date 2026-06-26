@@ -112,6 +112,42 @@ TimingConfig createPresetTimingConfig(PresetTimingMode timingMode){
     }
   }
 
+/// Controls when bot model metadata and avatars are exposed to clients.
+///
+/// This replaces the old boolean `exposeBotCode` flag with fine-grained control
+/// over bot visibility. The replacement case (bot takes over for a human who
+/// left) is always communicated to clients regardless of this setting, because
+/// clients need it to update the seat/avatar.
+enum ExposeBotCode {
+  /// Never expose bot model/avatar info. Used for fast-match where bots are
+  /// background filler and their identities should be invisible.
+  neverExpose,
+
+  /// Only expose bot info when a bot replaces a human player (e.g. a human
+  /// leaves mid-game and a delegate bot takes over). Used for friend rooms
+  /// where bot indicators are hidden unless a replacement occurs.
+  onlyReplacement,
+
+  /// Always expose bot model/avatar info. Used for play-with-bots and bot-test
+  /// modes where transparency about AI opponents is desired.
+  alwaysExpose;
+
+  /// Parses [value] which may be a legacy `bool` (`true` → [alwaysExpose],
+  /// `false` → [onlyReplacement]) or a string matching an enum name.
+  static ExposeBotCode parse(dynamic value) {
+    if (value is bool) {
+      return value ? ExposeBotCode.alwaysExpose : ExposeBotCode.onlyReplacement;
+    }
+    if (value is String) {
+      return ExposeBotCode.values.firstWhere(
+        (e) => e.name == value,
+        orElse: () => ExposeBotCode.alwaysExpose,
+      );
+    }
+    return ExposeBotCode.alwaysExpose;
+  }
+}
+
 /// Immutable configuration for a game room that governs gameplay rules.
 ///
 /// Includes player count, tribute/ace-passing settings, timing, and
@@ -141,9 +177,12 @@ class GameRoomConfig{
   /// When `true` (default), bot-specific nicknames are used.
   bool useBotNicknames;
 
-  /// When `false`, bot model metadata is hidden from client join messages
-  /// (for privacy in social/friend rooms). When `true` (default), exposed.
-  bool exposeBotCode;
+  /// Controls when bot model metadata and avatars are exposed to clients.
+  ///
+  /// See [ExposeBotCode] for the available modes. The replacement case (bot
+  /// takes over for a human who left) is always communicated to clients
+  /// regardless of this setting.
+  ExposeBotCode exposeBotCode;
 
   /// When `true`, broadcast optional social leave notifications.
   /// In-game replacement messages are always broadcast because clients need
@@ -191,7 +230,7 @@ class GameRoomConfig{
   GameRoomConfig({required this.requiredPlayers, this.acePassingEnabled=true, this.roomTier=0,
     this.tributeEnabled=true, this.bankerFirstWhenNoTribute=true, this.allowExtraTime=true,
      this.password, TimingConfig? timingConfig,
-     this.useBotNicknames = true, this.exposeBotCode = true, this.broadcastPlayerLeave = false,
+     this.useBotNicknames = true, this.exposeBotCode = ExposeBotCode.alwaysExpose, this.broadcastPlayerLeave = false,
      this.botDelay = 0}):
     _timingConfig = timingConfig;
 
@@ -209,7 +248,7 @@ class GameRoomConfig{
         bankerFirstWhenNoTribute = json['banker_first_when_no_tribute'] as bool? ?? true,
         password = json['password'] as String?,
         useBotNicknames = json['use_bot_nicknames'] as bool? ?? true,
-        exposeBotCode = json['expose_bot_code'] as bool? ?? true,
+        exposeBotCode = ExposeBotCode.parse(json['expose_bot_code']),
         broadcastPlayerLeave = json['broadcast_player_leave'] as bool? ?? false,
         botDelay = json['bot_delay'] as int? ?? 0;
 
@@ -225,7 +264,7 @@ class GameRoomConfig{
     bool? allowExtraTime,
     TimingConfig? timingConfig,
     bool? useBotNicknames,
-    bool? exposeBotCode,
+    ExposeBotCode? exposeBotCode,
     bool? broadcastPlayerLeave,
     int? botDelay,
   }) {
@@ -256,7 +295,7 @@ class GameRoomConfig{
       'tribute_enabled': tributeEnabled,
       'banker_first_when_no_tribute': bankerFirstWhenNoTribute,
       'use_bot_nicknames': useBotNicknames,
-      'expose_bot_code': exposeBotCode,
+      'expose_bot_code': exposeBotCode.name,
       'broadcast_player_leave': broadcastPlayerLeave,
       'bot_delay': botDelay,
     };

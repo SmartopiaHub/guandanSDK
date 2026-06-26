@@ -84,6 +84,31 @@ def create_preset_timing_config(timing_mode: PresetTimingMode) -> TimingConfig:
     return TimingConfig(play_time_limit=99, tribute_time_limit=99, return_time_limit=99)
 
 
+class ExposeBotCode(Enum):
+    """Controls when bot model metadata and avatars are exposed to clients."""
+
+    NEVER_EXPOSE = "neverExpose"
+    """Never expose bot model/avatar info (fast-match)."""
+
+    ONLY_REPLACEMENT = "onlyReplacement"
+    """Only expose when a bot replaces a human player (friend rooms)."""
+
+    ALWAYS_EXPOSE = "alwaysExpose"
+    """Always expose bot model/avatar info (play-with-bots, bot-test)."""
+
+    @classmethod
+    def parse(cls, value: Any) -> "ExposeBotCode":
+        """Parse a legacy ``bool`` or a string enum name to an ``ExposeBotCode``."""
+        if isinstance(value, bool):
+            return cls.ALWAYS_EXPOSE if value else cls.ONLY_REPLACEMENT
+        if isinstance(value, str):
+            try:
+                return cls(value)
+            except ValueError:
+                return cls.ALWAYS_EXPOSE
+        return cls.ALWAYS_EXPOSE
+
+
 @dataclass
 class GameRoomConfig:
     """Immutable-ish gameplay configuration for a room."""
@@ -97,7 +122,7 @@ class GameRoomConfig:
     password: Optional[str] = None
     timing_config: Optional[TimingConfig] = None
     use_bot_nicknames: bool = True
-    expose_bot_code: bool = True
+    expose_bot_code: ExposeBotCode = ExposeBotCode.ALWAYS_EXPOSE
     broadcast_player_leave: bool = False
 
     @classmethod
@@ -133,7 +158,7 @@ class GameRoomConfig:
             "tribute_enabled": self.tribute_enabled,
             "banker_first_when_no_tribute": self.banker_first_when_no_tribute,
             "use_bot_nicknames": self.use_bot_nicknames,
-            "expose_bot_code": self.expose_bot_code,
+            "expose_bot_code": self.expose_bot_code.value,
             "broadcast_player_leave": self.broadcast_player_leave,
         }
 
@@ -149,7 +174,7 @@ class GameRoomConfig:
             banker_first_when_no_tribute=data.get("banker_first_when_no_tribute", True),
             password=data.get("password"),
             use_bot_nicknames=data.get("use_bot_nicknames", True),
-            expose_bot_code=data.get("expose_bot_code", True),
+            expose_bot_code=ExposeBotCode.parse(data.get("expose_bot_code", True)),
             broadcast_player_leave=data.get("broadcast_player_leave", False),
         )
 
