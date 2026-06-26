@@ -1315,6 +1315,7 @@ to the **joining player** differs from the one broadcast to existing players.
   "profile": { "bot_model": "MyBot-v1" },
   "room_info": {
     "room_id": "room_xyz",
+    "room_code": "AB12CD",
     "name": "Test Room",
     "config": { "max_players": 4, "rule_set": "classic" }
   },
@@ -1385,7 +1386,7 @@ to the **joining player** differs from the one broadcast to existing players.
 {
   "type": "iGameRoomCreated",
   "room_id": "room_xyz",
-  "room_info": { "room_id": "room_xyz", "name": "My Room", "config": { /* ... */ } },
+  "room_info": { "room_id": "room_xyz", "room_code": "AB12CD", "name": "My Room", "config": { /* ... */ } },
   "players": [ /* ... */ ]
 }
 ```

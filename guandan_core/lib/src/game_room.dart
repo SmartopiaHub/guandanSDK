@@ -269,8 +269,10 @@ class GameRoomConfig{
 /// [GameRoomConfig]. The [password] getter is a convenience for the config's
 /// password field.
 class RoomMetadata {
-  /// The room's unique identifier.
+  /// The room's unique identifier (runtime room ID).
   final String roomId;
+  /// The human-readable room code/number, used for sharing and display.
+  final String? roomCode;
   /// The player ID of the room creator.
   final String creatorId;
   /// When the room was created.
@@ -286,11 +288,13 @@ class RoomMetadata {
 
   /// Creates room metadata. If no [config] is given, defaults to a 4-player room.
   RoomMetadata(this.roomId, this.creatorId, this.creationTime, this.ownerId,
-    {GameRoomConfig? config}): config = config ?? GameRoomConfig.fourPlayers();
+    {this.roomCode, GameRoomConfig? config})
+      : config = config ?? GameRoomConfig.fourPlayers();
 
   /// Deserializes [RoomMetadata] from a JSON map.
   RoomMetadata.fromJson(Map<String, dynamic> json)
       : roomId = json['room_id'] as String,
+        roomCode = json['room_code'] as String?,
         creatorId = json['creator_id'] as String,
         creationTime = DateTime.parse(json['creation_time'] as String),
         ownerId = json['room_owner_id'] as String?,
@@ -299,6 +303,7 @@ class RoomMetadata {
   /// Creates a copy with the given fields replaced.
   RoomMetadata copyWith({
     String? roomId,
+    String? roomCode,
     String? creatorId,
     DateTime? creationTime,
     String? ownerId,
@@ -309,6 +314,7 @@ class RoomMetadata {
       creatorId ?? this.creatorId,
       creationTime ?? this.creationTime,
       ownerId ?? this.ownerId,
+      roomCode: roomCode ?? this.roomCode,
       config: config ?? this.config,
     );
   }
@@ -316,6 +322,7 @@ class RoomMetadata {
   Map<String, dynamic> toJson() {
     return {
       'room_id': roomId,
+      if (roomCode != null) 'room_code': roomCode,
       'creator_id': creatorId,
       'creation_time': creationTime.toIso8601String(),
       'room_owner_id': ownerId,
