@@ -145,9 +145,9 @@ class GameRoomConfig{
   /// (for privacy in social/friend rooms). When `true` (default), exposed.
   bool exposeBotCode;
 
-  /// When `true`, broadcast a `PlayerQuitRoomMessage` when a player voluntarily
-  /// leaves during a game. Used for social etiquette in friend rooms.
-  /// When `false` (default), no broadcast is sent.
+  /// When `true`, broadcast optional social leave notifications.
+  /// In-game replacement messages are always broadcast because clients need
+  /// them to replace the leaving player's seat/avatar with the delegate bot.
   bool broadcastPlayerLeave;
 
   /// The delay for bot actions to simulate human behavior, in milliseconds.

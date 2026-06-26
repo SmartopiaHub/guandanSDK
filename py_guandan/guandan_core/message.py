@@ -64,7 +64,7 @@ class MessageType(Enum):
     P_QUIT_ROOM_REQUEST = "pQuitRoomRequest"
     P_PAY_TRIBUTE_REQUEST = "pPayTributeRequest"
     P_PLAY_HAND_REQUEST = "pPlayHandRequest"
-    P_MORE_TIME_REQUEST = "pMoreTimeRequest"
+    P_EXTRA_TIME_REQUEST = "pExtraTimeRequest"
     P_SEAT_REQUEST = "pSeatRequest"
     P_RETURN_CARD_REQUEST = "pReturnCardRequest"
     P_START_GAME_REQUEST = "pStartGameRequest"

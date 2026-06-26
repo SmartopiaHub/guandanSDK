@@ -147,7 +147,7 @@ enum MessageType {
   pPlayHandRequest,
 
   /// Player requests additional time for their current action.
-  pMoreTimeRequest,
+  pExtraTimeRequest,
 
   /// Player requests to take or change a seat in the room.
   pSeatRequest,
@@ -1080,7 +1080,7 @@ class ServerReturnCardRequest extends ServerRequestMessage {
 /// Concrete subclasses: [JoinRoomRequest], [QuitRoomRequest],
 /// [PlayerPlayHandRequest], [PlayerPayTributeRequest], [PlayerReturnCardRequest],
 /// [NewRoundRequest], [StartGameRequest], [CreateRoomRequest],
-/// [MoreTimeRequest], [SeatRequest].
+/// [ExtraTimeRequest], [SeatRequest].
 abstract class PlayerRequestMessage extends GameRoomMessage {
   /// The ID of the player making this request.
   final String playerId;
@@ -2443,8 +2443,8 @@ class HeartbeatMessage extends GameMessage {
 
 
 /// Player-to-server request for additional time on the current action.
-@MsgAnnotation(MessageType.pMoreTimeRequest)
-class MoreTimeRequest extends PlayerRequestMessage {
+@MsgAnnotation(MessageType.pExtraTimeRequest)
+class ExtraTimeRequest extends PlayerRequestMessage {
   /// The round in which more time is requested.
   final String roundId;
 
@@ -2454,7 +2454,7 @@ class MoreTimeRequest extends PlayerRequestMessage {
   /// The number of seconds requested, or null for default.
   final int? seconds;
 
-  MoreTimeRequest({
+  ExtraTimeRequest({
     super.messageId,
     required super.playerId,
     required super.roomId,
@@ -2462,10 +2462,10 @@ class MoreTimeRequest extends PlayerRequestMessage {
     required this.roundId,
     this.seconds,
     this.turnId,
-  }) : super(type: MessageType.pMoreTimeRequest);
+  }) : super(type: MessageType.pExtraTimeRequest);
 
-  factory MoreTimeRequest.fromJson(Map<String, dynamic> json) {
-    return MoreTimeRequest(
+  factory ExtraTimeRequest.fromJson(Map<String, dynamic> json) {
+    return ExtraTimeRequest(
       messageId: json['message_id'],
       playerId: json['player_id'],
       roomId: json['room_id'],

@@ -83,8 +83,8 @@ class GameMessageFactory {
         return GameRoomCreatedMessage.fromJson(json);
       case MessageType.heartbeat:
         return HeartbeatMessage.fromJson(json);
-      case MessageType.pMoreTimeRequest:
-        return MoreTimeRequest.fromJson(json);
+      case MessageType.pExtraTimeRequest:
+        return ExtraTimeRequest.fromJson(json);
       case MessageType.pSeatRequest:
         return SeatRequest.fromJson(json);
       case MessageType.iServerClosed:

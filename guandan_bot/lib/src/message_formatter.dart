@@ -80,7 +80,7 @@ class MessageFormatter {
         'CreateRoom(player=$playerId, name=$roomName)',
       SeatRequest(:final playerId, :final newSeat) =>
         'ChangeSeat(player=$playerId, seat=$newSeat)',
-      MoreTimeRequest(:final playerId, :final seconds) =>
+      ExtraTimeRequest(:final playerId, :final seconds) =>
         'MoreTime(player=$playerId, secs=${seconds ?? '-'})',
 
       // --- Informational messages ---

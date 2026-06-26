@@ -74,6 +74,32 @@ void main() {
       expect(gameState.canPlay(Hand.fromString('RJ RJ'), player3.id), true);
     });
 
+    test('Cannot pass before any non-empty hand is on the table', () {
+      gameState.newRound(startPlayer: player1);
+      player1.setCardsOnHand(Hand.fromString('3D 3S'));
+      player2.setCardsOnHand(Hand.fromString('4D 4S'));
+      player3.setCardsOnHand(Hand.fromString('5D 5S'));
+      player4.setCardsOnHand(Hand.fromString('6D 6S'));
+
+      expect(gameState.canPlay(Hand.emptyHand(), player1.id), isFalse);
+
+      gameState.currentRound!.currentPhase.appendTurn(player1, Hand.emptyHand());
+      expect(gameState.currentPlayerToPlay!.id, player2.id);
+      expect(gameState.canPlay(Hand.emptyHand(), player2.id), isFalse);
+      expect(gameState.currentRound!.currentPhase.isEndOfPhase(gameState.players), isFalse);
+    });
+
+    test('Can pass after a non-empty hand is on the table', () {
+      gameState.newRound(startPlayer: player1);
+      player1.setCardsOnHand(Hand.fromString('3D 3S'));
+      player2.setCardsOnHand(Hand.fromString('4D 4S'));
+
+      final hand = deduceHandType(Hand.fromString('3D 3S'));
+      gameState.playCards(player1, hand);
+
+      expect(gameState.canPlay(Hand.emptyHand(), player2.id), isTrue);
+    });
+
     test('Current Player To Play', () {
       gameState.newRound(startPlayer: player1);
       expect(gameState.currentPlayerToPlay!.id, player1.id);

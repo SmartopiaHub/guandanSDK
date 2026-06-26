@@ -334,15 +334,17 @@ class Phase {
     }
     // Case II: all other players having cards passed, except the last player who played at least one card.
     Turn? t = lastNonPassTurn;
-    assert (t != null);
+    if (t == null) {
+      return false;
+    }
 
-    int tIndex = turns.indexWhere((turn) => turn.id == t!.id);
+    int tIndex = turns.indexWhere((turn) => turn.id == t.id);
     Set<String> playersPassed = {
       for (Turn turn in turns.sublist(tIndex + 1))
         if (turn.isPassed) turn.player.id
     };
     for (Player player in players) {
-      if (player.id != t?.player.id && player.hasAtLeastOneCard && !playersPassed.contains(player.id)) {
+      if (player.id != t.player.id && player.hasAtLeastOneCard && !playersPassed.contains(player.id)) {
         return false;
       }
     }
@@ -1667,7 +1669,7 @@ class GameState {
     }
 
     if (cardsToPlay.isEmpty) {
-      return canPass();
+      return canPass() && currentRound!.currentPhase.handOnTable.type != HandType.empty;
     }
 
     if (!player.hasCards(cardsToPlay)) {
