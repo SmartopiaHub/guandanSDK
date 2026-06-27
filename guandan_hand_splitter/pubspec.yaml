@@ -1,6 +1,6 @@
 name: guandan_hand_splitter
 description: Shared abstractions for splitting Guandan hands into multiple hands.
-version: 1.0.218
+version: 1.0.222
 publish_to: none
 
 environment:

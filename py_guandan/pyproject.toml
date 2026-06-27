@@ -4,15 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-guandan"
-version = "0.1.0"
-description = "Python port of the guandan_core Dart package."
+version = "0.2.0"
+description = "Python Guandan core rules and bot development SDK."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Guandan contributors" }]
 
+[project.optional-dependencies]
+websocket = ["websockets>=11"]
+dev = ["pytest>=7", "websockets>=11"]
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["guandan_core*", "py_guandan*"]
+include = ["guandan_core*", "guandan_bot*", "py_guandan*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
