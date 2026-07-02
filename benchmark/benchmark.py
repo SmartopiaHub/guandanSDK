@@ -12,7 +12,7 @@ All configuration comes from the YAML config file.  There are no built-in
 defaults — every required field must be present in the config file.
 
 Required config.yaml fields:
-    auto_test_api_key    — developer automation API key
+    developer_api_key    — developer automation API key
     lobby_url            — lobby server base URL (e.g. http://127.0.0.1:8686)
     bots                 — per-seat bot assignments for seats 1–4
     num_rounds           — number of rounds (can be overridden via --num-rounds)
@@ -83,13 +83,13 @@ def load_config(path: str) -> dict:
     errors: list[str] = []
 
     # -- api_key ---------------------------------------------------------------
-    api_key = (cfg.get("auto_test_api_key", "") or "").strip()
+    api_key = (cfg.get("developer_api_key", "") or "").strip()
     if not api_key:
-        errors.append("auto_test_api_key is missing or empty")
+        errors.append("developer_api_key is missing or empty")
     else:
         key_err = validate_api_key_format(api_key)
         if key_err:
-            errors.append(f"auto_test_api_key: {key_err}")
+            errors.append(f"developer_api_key: {key_err}")
 
     # -- lobby_url -------------------------------------------------------------
     lobby_url = (cfg.get("lobby_url", "") or "").strip()
@@ -195,21 +195,45 @@ def log(level: str, msg: str) -> None:
 def validate_api_key_format(api_key: str) -> Optional[str]:
     """Check the API key looks well-formed. Returns error string or None."""
     if not api_key:
-        return "API key is empty. Set auto_test_api_key in config.yaml."
-    if not api_key.startswith("gdk_test_kid_"):
-        return (
-            "API key has wrong prefix. Expected format: "
-            "gdk_test_kid_<8-char-key-id>.<32-char-secret>"
-        )
-    parts = api_key[len("gdk_test_kid_"):].split(".", 1)
-    if len(parts) != 2:
-        return "API key is missing '.' separator between key ID and secret."
-    kid, secret = parts
-    if len(kid) != 8:
-        return f"API key ID is {len(kid)} chars, expected 8."
-    if len(secret) != 32:
-        return f"API key secret is {len(secret)} chars, expected 32."
-    return None
+        return "API key is empty. Set developer_api_key in config.yaml."
+
+    # Current format: sk-zq-{publicKeyId}_{secret}
+    if api_key.startswith("sk-zq-"):
+        payload = api_key[6:]  # strip 'sk-zq-'
+        if '_' not in payload:
+            return (
+                "API key is missing '_' separator between public key ID "
+                "and secret. Expected format: sk-zq-{publicKeyId}_{secret}"
+            )
+        key_id, secret = payload.split('_', 1)
+        if not key_id.startswith("zq_") or len(key_id) != 10:
+            return (
+                f"API key public key ID '{key_id}' looks wrong. "
+                "Expected format: zq_<8-alphanumeric>"
+            )
+        if len(secret) < 32:
+            return (
+                f"API key secret is too short ({len(secret)} chars, "
+                "expected at least 32)."
+            )
+        return None
+
+    # Legacy format: gdk_test_kid_<8-char-key-id>.<32-char-secret>
+    if api_key.startswith("gdk_test_kid_"):
+        parts = api_key[len("gdk_test_kid_"):].split(".", 1)
+        if len(parts) != 2:
+            return "API key is missing '.' separator between key ID and secret."
+        kid, secret = parts
+        if len(kid) != 8:
+            return f"API key ID is {len(kid)} chars, expected 8."
+        if len(secret) != 32:
+            return f"API key secret is {len(secret)} chars, expected 32."
+        return None
+
+    return (
+        "API key has unrecognised prefix. Expected "
+        "sk-zq-{publicKeyId}_{secret} or gdk_test_kid_<key-id>.<secret>"
+    )
 
 
 # ---------------------------------------------------------------------------

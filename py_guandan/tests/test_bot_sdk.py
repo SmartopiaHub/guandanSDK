@@ -6,6 +6,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from guandan_bot import (
+    BasicBot,
     Bot,
     BotApplication,
     BotMessage,
@@ -21,6 +22,7 @@ from guandan_bot import (
     TributeRequest,
 )
 from guandan_core import Card, Hand, HandType
+from guandan_core.hand_validator import detect_hand
 
 
 class ThreeMethodBot(Bot):
@@ -85,6 +87,53 @@ def test_invalid_decision_is_reported_early() -> None:
         }))
 
 
+@pytest.mark.parametrize(
+    ("cards", "expected_type", "expected_power"),
+    [
+        ("2D* 2S*", HandType.PAIR, 15),
+        ("2D* 2S* 2C*", HandType.TRIPLE, 15),
+        ("2D* 2S* 2C* 2D*", HandType.BOMB, 415),
+    ],
+)
+def test_level_rank_groups_use_promoted_power(
+    cards: str,
+    expected_type: HandType,
+    expected_power: int,
+) -> None:
+    detected = detect_hand(
+        [Card.parse(value, "2") for value in cards.split()],
+        level_rank="2",
+    )
+    assert detected == (expected_type, expected_power)
+
+
+def test_basic_bot_can_beat_ace_pair_with_level_pair() -> None:
+    application = BotApplication(
+        lambda: BasicBot(randomize_leads=False),
+        bot_code="basic",
+    )
+    start(application)
+    response = application.handle(
+        GameMessageEnvelope(
+            "s1",
+            {
+                "type": "sPlayHandRequest",
+                "room_id": "r",
+                "game_id": "g",
+                "player_id": "p1",
+                "round_id": "R1",
+                "turn_id": "T1",
+                "available_cards": "2D* 2S*",
+                "hand_on_table": "pair-14 : AH AS",
+                "level_rank": "2",
+            },
+            "play-request",
+        )
+    )
+    assert response is not None
+    assert response.to_dict()["payload"]["cards"] == "2D* 2S*"
+
+
 def test_informational_messages_update_hand_and_reach_hook() -> None:
     seen = []
 
@@ -147,4 +196,3 @@ def test_game_configuration_matches_benchmark_payload() -> None:
 def test_game_configuration_requires_four_seats() -> None:
     with pytest.raises(ValueError, match="exactly seats"):
         TestGameConfig("url", "key", (Participant.builtin(1),))
-

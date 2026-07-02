@@ -137,7 +137,12 @@ def _detect_strict(cards: list[Card]) -> Optional[tuple[HandType, int]]:
     if len(by_rank) == 1:
         rank = ranks[0]
         count = len(by_rank[rank])
-        power = rank_power(rank)
+        # The wire format marks every current-level card with ``*``.  Its
+        # promoted power is 15 even though its natural rank may be low (for
+        # example, ``2D*``).  Using rank_power(rank) here made the validator
+        # disagree with find_pairs()/can_play(), which correctly use the
+        # promoted card power.
+        power = by_rank[rank][0].power_with_level
         if count == 1:
             return HandType.SINGLE, power
         elif count == 2:

@@ -23,8 +23,8 @@ You need a developer automation key to run the benchmark.  Get one through the
 3. Navigate to **API Keys** → **Create Automation Key**.
 4. Fill in the form
 5. Click **Create**.  Copy the generated key — it looks like
-   `gdk_test_kid_<8-chars>.<32-chars>`.
-6. Paste it into `config.yaml` as the `auto_test_api_key` value.
+   `sk-zq-{publicKeyId}_{secret}` (or the legacy `gdk_test_kid_<8-chars>.<32-chars>`).
+6. Paste it into `config.yaml` as the `developer_api_key` value.
 
 ## Quick Start
 
@@ -51,15 +51,17 @@ python3 benchmark.py --config my-bot-matchup.yaml
 All settings come from the YAML config file — there are **no built-in
 defaults**.  The script exits with an error if any required field is missing.
 
-### `auto_test_api_key` (required)
+### `developer_api_key` (required)
 
 The developer automation API key used to authenticate with the lobby.
 
 ```yaml
-auto_test_api_key: gdk_test_kid_6REIcePa.TPS7ezvWFxirqMMXCwNNwrjZIDgD7oNX
+developer_api_key: sk-zq-zq_xxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Legacy format also accepted during deprecation:
+# developer_api_key: gdk_test_kid_6REIcePa.TPS7ezvWFxirqMMXCwNNwrjZIDgD7oNX
 ```
 
-Format: `gdk_test_kid_<key-id>.<char-secret>`
+Format: `sk-zq-{publicKeyId}_{secret}` (preferred). Legacy: `gdk_test_kid_<key-id>.<char-secret>`
 
 ### `lobby_url` (required)
 
@@ -244,7 +246,7 @@ total number of requested rounds.
 | Symptom | Likely cause |
 |---|---|
 | `Config file not found` | `--config` points to a missing file, or `config.yaml` is not in the `benchmark/` directory |
-| `auto_test_api_key is missing` | Add the key to `config.yaml` |
+| `developer_api_key is missing` | Add the key to `config.yaml` |
 | `bots: missing seat(s): seat_2, seat_4` | Every seat (1–4) must have a bot entry |
 | `Test game creation failed: HTTP 401` | API key is invalid or expired — re-create it |
 | `Test game creation failed: HTTP 503` | No healthy game server is registered with the lobby |

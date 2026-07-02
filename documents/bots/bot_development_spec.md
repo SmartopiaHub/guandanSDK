@@ -189,25 +189,40 @@ behind a reverse proxy, or publishing through a tunnel.
 
 ## WebSocket Push Mode
 
-WebSocket deployments register:
+WebSocket deployments register without a `base_url`:
 
 ```json
 {
-  "transport_type": "websocket",
-  "base_url": "wss://bot.example.com/guandan"
+  "transport_type": "websocket"
 }
 ```
 
-The current runtime implementation connects from the game server to the
-registered deployment `base_url`. Messages use JSON envelopes:
+The bot is the WebSocket client. It connects to the assigned game server's
+`/bot-gateway/v1` endpoint with its one-time deployment management key:
+
+```http
+Authorization: Bearer <deployment-management-key>
+X-Guandan-Bot-Protocol: guandan-bot-v1
+```
+
+Messages use a flat top-level envelope. There is no nested `envelope` field:
 
 ```json
 {
-  "request_id": "req_01",
+  "type": "game_message",
   "session_id": "bot_session_01",
-  "type": "request_hand",
+  "request_id": "req_01",
   "deadline_millis": 1780502400000,
-  "payload": {}
+  "payload": {
+    "type": "sPlayHandRequest",
+    "room_id": "room_01",
+    "game_id": "game_01",
+    "round_id": "R1",
+    "turn_id": "R1_P1_T1",
+    "hand_on_table": "pair-14 : AH AS",
+    "level_rank": "2",
+    "available_cards": "2D* 2S* 3H"
+  }
 }
 ```
 
@@ -215,17 +230,20 @@ Responses must echo `request_id` and `session_id`.
 
 ## Session Creation
 
-`POST /sessions` request:
+HTTP bots receive this object in `POST /sessions`; WebSocket bots receive the
+same object as a text frame:
 
 ```json
 {
+  "type": "session_start",
   "session_id": "bot_session_01",
   "bot_definition_id": "bot_definition_01",
-  "game_id": "game_01",
+  "deployment_id": "DABCDEFG",
   "player_id": "player_03",
   "seat": 3,
   "rule_set": "classic",
-  "protocol_version": "guandan-bot-v1"
+  "protocol_version": "guandan-bot-v1",
+  "number_of_standard_decks": 2
 }
 ```
 
@@ -233,7 +251,8 @@ Successful response:
 
 ```json
 {
-  "provider_session_id": "optional-provider-session-id",
+  "type": "session_started",
+  "session_id": "bot_session_01",
   "accepted": true
 }
 ```
@@ -244,9 +263,18 @@ Play response:
 
 ```json
 {
-  "request_id": "req_01",
+  "type": "game_message",
   "session_id": "bot_session_01",
-  "cards_to_play": "SA HA DA CA"
+  "request_id": "req_01",
+  "payload": {
+    "type": "pPlayHandRequest",
+    "room_id": "room_01",
+    "game_id": "game_01",
+    "player_id": "player_03",
+    "round_id": "R1",
+    "turn_id": "R1_P1_T1",
+    "cards": "2D* 2S*"
+  }
 }
 ```
 
@@ -254,9 +282,17 @@ Tribute response:
 
 ```json
 {
-  "request_id": "req_02",
+  "type": "game_message",
   "session_id": "bot_session_01",
-  "tribute_card": "SA"
+  "request_id": "req_02",
+  "payload": {
+    "type": "pPayTributeRequest",
+    "room_id": "room_01",
+    "game_id": "game_01",
+    "player_id": "player_03",
+    "round_id": "R1",
+    "tribute_card": "AS"
+  }
 }
 ```
 
@@ -264,9 +300,17 @@ Return-card response:
 
 ```json
 {
-  "request_id": "req_03",
+  "type": "game_message",
   "session_id": "bot_session_01",
-  "return_card": "3C"
+  "request_id": "req_03",
+  "payload": {
+    "type": "pReturnCardRequest",
+    "room_id": "room_01",
+    "game_id": "game_01",
+    "player_id": "player_03",
+    "round_id": "R1",
+    "return_card": "3C"
+  }
 }
 ```
 

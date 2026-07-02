@@ -214,13 +214,16 @@ WebSocket deployment:
 {
   "provider_id": "PABCDE",
   "transport_type": "websocket",
-  "base_url": "wss://bot.example.com/guandan",
   "supported_bot_definition_ids": ["BBCDEF"],
   "supported_protocol_versions": ["guandan-bot-v1"],
   "max_concurrent_sessions": 128,
   "region": "us-west"
 }
 ```
+
+WebSocket deployments do not register a `base_url`. The bot connects inbound
+to the game server's `/bot-gateway/v1` endpoint using the returned
+`deployment_management_key`.
 
 Response type: `BotRegistrationResponse`.
 

@@ -12,11 +12,12 @@ authors = [{ name = "Guandan contributors" }]
 
 [project.optional-dependencies]
 websocket = ["websockets>=11"]
-dev = ["pytest>=7", "websockets>=11"]
+benchmark = ["requests>=2", "pyyaml>=6"]
+dev = ["pytest>=7", "websockets>=11", "requests>=2", "pyyaml>=6"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["guandan_core*", "guandan_bot*", "py_guandan*"]
+include = ["guandan_core*", "guandan_bot*", "py_guandan*", "guandan_benchmark*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

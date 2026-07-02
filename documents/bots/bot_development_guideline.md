@@ -33,9 +33,10 @@ the platform using a standard JSON protocol over **HTTP** or **WebSocket**.
 └──────────────┘     game message       └──────────────────┘
 ```
 
-The game server sends your bot **game messages** wrapped in a protocol
-envelope.  Your bot responds with action messages (play cards, pay tribute,
-etc.) wrapped in the same envelope.
+The game server sends your bot **game messages** as a flat protocol-envelope
+JSON object. Your bot responds with action messages (play cards, pay tribute,
+etc.) in the same flat shape. "Envelope" names the top-level object; it does
+not mean that the object contains a nested `envelope` property.
 
 ### Transport Options
 
@@ -553,6 +554,11 @@ Your bot acknowledges session termination.
 This is the **primary message type** during gameplay.  It wraps a
 [GameMessage](#game-messages-payload-reference) payload.
 
+> **Wire-shape rule:** `session_id`, `request_id`, `deadline_millis`, and
+> `payload` are direct properties of the top-level `game_message` object.
+> Never put them inside an `"envelope": {...}` property. The nested form is
+> not part of `guandan-bot-v1` and the server will reject it.
+
 ```json
 {
   "type": "game_message",
@@ -974,8 +980,9 @@ asyncio.run(bot())
 
 ## Game Messages (Payload Reference)
 
-All game messages are sent inside a `game_message` envelope's `payload` field.
-The `payload.type` field determines the specific message.
+All game messages use the flat top-level `game_message` object documented
+above. The actual game message is its `payload` field, and `payload.type`
+determines the specific message.
 
 ### Messages Requiring a Response (Server → Bot)
 
@@ -1643,7 +1650,7 @@ The platform includes an automated test runner in `benchmark/auto_test.py`.
 **Configuration (`benchmark/config.yaml`):**
 
 ```yaml
-auto_test_api_key: "gdk_test_kid_xxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+developer_api_key: "gdk_test_kid_xxxxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 lobby_url: "http://localhost:8686"
 num_rounds: 10
 sse_timeout_s: 120

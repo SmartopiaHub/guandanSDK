@@ -7,7 +7,7 @@ from guandan_bot import Participant, TestGame, TestGameConfig
 
 config = TestGameConfig(
     lobby_url=os.environ.get("LOBBY_URL", "https://www.zhiquguandan.com"),
-    api_key=os.environ["AUTO_TEST_API_KEY"],
+    api_key=os.environ["developer_api_key"],
     participants=(
         Participant.deployed(1, os.environ["BOT_DEPLOYMENT_ID"]),
         Participant.builtin(2),

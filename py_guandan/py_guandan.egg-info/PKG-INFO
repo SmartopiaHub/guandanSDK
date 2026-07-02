@@ -1,3 +1,16 @@
+Metadata-Version: 2.1
+Name: py-guandan
+Version: 0.2.0
+Summary: Python Guandan core rules and bot development SDK.
+Home-page: UNKNOWN
+License: UNKNOWN
+Platform: UNKNOWN
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Provides-Extra: websocket
+Provides-Extra: benchmark
+Provides-Extra: dev
+
 # py_guandan
 
 Python port of the Dart `guandan_core` package, with a Python bot-development
@@ -84,160 +97,9 @@ The server implements `POST /sessions`,
 `GET /health`. The invocation key is accepted through either `Authorization:
 Bearer ...` or `X-Api-Key`.
 
-## Benchmark runner
-
-The `guandan_benchmark` module is a fully automated test harness that creates a
-configurable bot match-up, monitors the SSE event stream in real time, and
-reports per-round scores and win rates.  It wraps `TestGame.start()` (see below)
-with live monitoring, heartbeat tracking, and a summary report.
-
-### Install
-
-```sh
-cd py_guandan
-python3 -m pip install -e '.[benchmark]'
-```
-
-This pulls in `requests` and `PyYAML` in addition to the core package.
-
-### Configuration
-
-Copy the example config and edit it:
-
-```sh
-cp guandan_benchmark/config.yaml.example config.yaml
-```
-
-The config file drives everything — there are no built-in defaults:
-
-```yaml
-developer_api_key: sk-zq-xxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-lobby_url: https://www.zhiquguandan.com
-num_rounds: 2
-total_timeout: 6000
-heartbeat_timeout: 1200
-
-bots:
-  seat_1:
-    type: builtin
-    bot_code: strongBot
-  seat_2:
-    type: builtin
-    bot_code: basicBot
-  seat_3:
-    type: builtin
-    bot_code: strongBot
-  seat_4:
-    type: builtin
-    bot_code: basicBot
-```
-
-Seats 1 & 3 are the red team, seats 2 & 4 are blue.  Use `type: deployed` with a
-`deployment_id` to test your own bot against built-in opponents:
-
-```yaml
-bots:
-  seat_1:
-    type: deployed
-    deployment_id: DXXXXXXXX
-  seat_2:
-    type: builtin
-    bot_code: strongBot
-  seat_3:
-    type: builtin
-    bot_code: basicBot
-  seat_4:
-    type: builtin
-    bot_code: strongBot
-```
-
-### CLI
-
-```sh
-# Run with the default config
-python -m guandan_benchmark
-
-# Override rounds and enable full output
-python -m guandan_benchmark --num-rounds 10 --verbose
-
-# Use a custom config, force internal-only bots
-python -m guandan_benchmark --config my-matchup.yaml --internal-only
-
-# Require deployed bots (fail if none are healthy)
-python -m guandan_benchmark --external-only
-
-# Override the timeout
-python -m guandan_benchmark --timeout 3600
-```
-
-| Flag | Description |
-|---|---|
-| `--config PATH` | Path to YAML config file |
-| `--num-rounds N` | Override `num_rounds` from config |
-| `--timeout N` | Override `total_timeout` from config |
-| `--verbose` | Print every agent message (default: only round start/end) |
-| `--external-only` | Require deployed bots; exit if none are healthy |
-| `--internal-only` | Force all seats to use built-in bots |
-
-### Library
-
-```python
-from guandan_benchmark import (
-    GameTracker,
-    load_config,
-    create_test_game,
-    monitor_events,
-    print_report,
-)
-
-# Load and validate config
-config = load_config("config.yaml")
-
-# Create a test game (uses the same API as TestGame.start())
-game = create_test_game(
-    lobby_url=config["lobby_url"],
-    api_key=config["api_key"],
-    participants=build_participants(
-        config["bot_configs"], [],
-        lobby_url=config["lobby_url"],
-        api_key=config["api_key"],
-    ),
-    num_rounds=config["num_rounds"],
-)
-
-# Monitor the SSE event stream with a score tracker
-tracker = GameTracker(total_rounds=config["num_rounds"])
-result = monitor_events(
-    events_url=game["runtime"]["events_url"],
-    access_token=game["runtime"]["access_token"],
-    timeout_s=config["total_timeout"],
-    heartbeat_timeout=config["heartbeat_timeout"],
-    verbose=True,
-    tracker=tracker,
-)
-
-# Print the final scoreboard
-print(tracker.red_win_rate, tracker.blue_win_rate)
-for d in tracker.round_details:
-    print(f"Round {d['round']}: {d['winner']}  Red {d['red_pts']} – Blue {d['blue_pts']}")
-```
-
-### Output
-
-Non-verbose mode prints one line per round start and end:
-
-```
-▶ Round R1  level=2  teamLR=(R:2 B:2)  start=seat1
-◀ Round R1  first=S1(red) | second=S3(red) | fourth=S2(blue)
-🏁 Round 1/10 completed (series 0/1)
-   Score: Red 3 – Blue 0  (winner: red)
-```
-
-When all rounds finish, a scoreboard and full report are printed.
-
 ## Start an automated game
 
-`TestGame.start()` uses the same lobby API and payload as the benchmark:
+`TestGame.start()` uses the same lobby API and payload as `benchmark.py`:
 
 ```python
 from guandan_bot import Participant, TestGame, TestGameConfig
@@ -271,22 +133,6 @@ URLs and access token; `game.cancel()` cancels the game. See
 - `guandan_bot.TestGame`: automated game launcher
 - `guandan_bot.BasicBot`: a small rule-based reference implementation
 - `guandan_bot.protocol`: typed `guandan-bot-v1` envelopes
-- `guandan_benchmark`: fully automated test harness with SSE monitoring, scoring, and reporting
-
-## Developer API key management
-
-Two cleanup operations are available on the lobby server:
-
-| Method | Path | Behavior |
-|---|---|---|
-| `POST` | `/api/v1/developer/keys/{keyId}/revoke` | **Soft delete** — sets `status: "revoked"`, key stays in DB |
-| `DELETE` | `/api/v1/developer/keys/{keyId}` | **Hard delete** — physically removes the key from the DB |
-
-The same pair exists under `/api/v1/developer/keys/automation-test/{keyId}`.
-Both operations require a developer session (or the key owner's access token).
-
-The convenience script `benchmark.py` issues a hard `DELETE` on cleanup, permanently
-removing the temporary key created for the run.
 
 ## Development
 
@@ -312,3 +158,5 @@ PYTHONPATH=../py_guandan:. python -m pytest
 
 Some tests cross-check the Python behavior with a small Dart runner compiled against
 `../guandan_core`.
+
+

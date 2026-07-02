@@ -1,6 +1,6 @@
 name: guandan_core
 description: A base library for the Guandan game, providing core game logic and data structures.
-version: 1.0.232
+version: 1.0.241
 # repository: https://github.com/my_org/my_repo
 
 environment:
