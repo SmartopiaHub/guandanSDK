@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Run a complete developer WebSocket-bot test game against Guandan."""
+"""Run a complete developer WebSocket-bot test game against Guandan.
+
+Reads an optional ``.env`` file from the current working directory:
+
+* ``LOBBY_SERVER_URL`` — lobby server URL (default: ``http://localhost:8686``).
+* ``USERNAME`` / ``PASSWORD`` — developer login credentials.
+* ``GAME_SERVER_URL`` — WebSocket bot-gateway server URL (default:
+  ``ws://127.0.0.1:9001``).
+
+Missing lobby or credential values are requested interactively. A process
+environment value for ``GAME_SERVER_URL`` overrides the ``.env`` value.
+"""
 
 from __future__ import annotations
 
@@ -11,10 +22,9 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 from guandan_bot import (
     BasicBot,
@@ -22,6 +32,8 @@ from guandan_bot import (
     BotError,
     BotMessage,
 )
+from guandan_bot._websocket import loopback_proxy_options
+from py_guandan.http import http_client
 
 
 class Colour:
@@ -76,23 +88,13 @@ def api_request(
         request_headers["Authorization"] = f"Bearer {bearer}"
     if headers:
         request_headers.update(headers)
-    request = Request(
+    return http_client.request_json(
+        method,
         url,
-        data=json.dumps(body).encode() if body is not None else None,
+        body=body,
         headers=request_headers,
-        method=method,
+        timeout=timeout,
     )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else {"ok": True}
-    except HTTPError as error:
-        raw = error.read().decode(errors="replace")
-        try:
-            detail: Any = json.loads(raw)
-        except json.JSONDecodeError:
-            detail = raw
-        raise RuntimeError(f"{method} {url} returned HTTP {error.code}: {detail}") from error
 
 
 def websocket_url(value: str) -> str:
@@ -102,6 +104,58 @@ def websocket_url(value: str) -> str:
     if value.startswith("https://"):
         return "wss://" + value.removeprefix("https://")
     return value
+
+
+def _load_dotenv(path: str | None = None) -> dict[str, str]:
+    """Parse a ``.env`` file, defaulting to the current working directory."""
+
+    if path is None:
+        path = os.path.join(os.getcwd(), ".env")
+    elif not os.path.isabs(path):
+        path = os.path.join(os.getcwd(), path)
+
+    result: dict[str, str] = {}
+    if not os.path.isfile(path):
+        return result
+
+    with open(path, "r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            result[key] = value
+    return result
+
+
+def _resolve_demo_inputs(
+    env: dict[str, str],
+    *,
+    process_env: Mapping[str, str] | None = None,
+    prompt=input,
+) -> tuple[str, str, str, str]:
+    """Resolve .env-backed demo inputs, prompting only for missing values."""
+
+    lobby_url = env.get("LOBBY_SERVER_URL", "").strip()
+    if not lobby_url:
+        lobby_url = (
+            prompt("Lobby server URL [http://localhost:8686]: ").strip()
+            or "http://localhost:8686"
+        )
+    username = env.get("USERNAME", "").strip() or prompt("Username: ").strip()
+    password = env.get("PASSWORD", "").strip() or prompt("Password: ").strip()
+
+    process_env = os.environ if process_env is None else process_env
+    game_server_url = (
+        process_env.get("GAME_SERVER_URL", "").strip()
+        or env.get("GAME_SERVER_URL", "").strip()
+        or "ws://127.0.0.1:9001"
+    )
+    return lobby_url.rstrip("/"), username, password, game_server_url.rstrip("/")
 
 
 class BotRunner:
@@ -157,7 +211,11 @@ class BotRunner:
         while not self.stopped.is_set():
             try:
                 log("Bot connecting", self.gateway_url)
-                connection = websockets.connect(self.gateway_url, **{header_name: headers})
+                connection = websockets.connect(
+                    self.gateway_url,
+                    **{header_name: headers},
+                    **loopback_proxy_options(websockets.connect, self.gateway_url),
+                )
                 async with connection as socket:
                     self._socket = socket
                     self.connected.set()
@@ -205,19 +263,24 @@ def _bot_message_summary(message: dict[str, Any]) -> str:
 
 def follow_game_events(events_url: str, access_token: str, timeout: float = 240.0) -> dict[str, Any]:
     """Subscribe to SSE; the first subscription is what starts auto-start games."""
-    request = Request(
+    response = http_client.request(
+        "GET",
         events_url,
         headers={"Authorization": f"Bearer {access_token}", "Accept": "text/event-stream"},
+        stream=True,
+        timeout=(10, timeout),
     )
+    http_client.require_success(response, method="GET", url=events_url)
     deadline = time.monotonic() + timeout
     event_name = "message"
     data_lines: list[str] = []
-    with urlopen(request, timeout=timeout) as response:
-        while time.monotonic() < deadline:
-            raw = response.readline()
-            if not raw:
+    with response:
+        for line in response.iter_lines(decode_unicode=True):
+            if time.monotonic() >= deadline:
                 break
-            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+            if isinstance(line, bytes):
+                line = line.decode("utf-8", errors="replace")
+            line = line or ""
             if line.startswith("event:"):
                 event_name = line[6:].strip()
             elif line.startswith("data:"):
@@ -240,11 +303,9 @@ def follow_game_events(events_url: str, access_token: str, timeout: float = 240.
 
 def main() -> int:
     print(f"{Colour.BOLD}Guandan WebSocket Bot — End-to-End Demo{Colour.RESET}", flush=True)
-    lobby_url = input("Lobby server URL [http://localhost:8686]: ").strip() or "http://localhost:8686"
-    username = input("Username: ").strip()
-    password = input("Password: ").strip()
-    lobby_url = lobby_url.rstrip("/")
-    game_server_url = os.environ.get("GUANDAN_GAME_SERVER_URL", "ws://127.0.0.1:9001")
+    lobby_url, username, password, game_server_url = _resolve_demo_inputs(
+        _load_dotenv()
+    )
 
     access_token = ""
     api_key = ""

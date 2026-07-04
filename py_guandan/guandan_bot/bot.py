@@ -5,9 +5,15 @@ from __future__ import annotations
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
-
-from guandan_core import Card, GameMessage, Hand, HandType, MessageType, PokerCardList
+from guandan_core import (
+    Card,
+    GameMessage,
+    GameState,
+    Hand,
+    HandType,
+    MessageType,
+    PokerCardList,
+)
 from guandan_core.utility import (
     can_play,
     find_full_houses,
@@ -40,7 +46,7 @@ class PlayRequest:
     round_id: str
     turn_id: str
     seat_of_hand_on_table: int | None = None
-    game_state_snapshot: dict[str, Any] | None = None
+    game_state_snapshot: GameState | None = None
 
 
 @dataclass(frozen=True)
@@ -86,7 +92,8 @@ class Bot(ABC):
         self.context = context
         self.cards_on_hand = PokerCardList.empty()
 
-    def _receive(self, payload: dict[str, Any]) -> None:
+    def _receive(self, message: GameMessage) -> None:
+        payload = message.to_json()
         message_type = payload.get("type")
         if message_type == MessageType.I_NEW_ROUND.value:
             self.cards_on_hand = PokerCardList.parse(payload.get("hand", ""), payload.get("level_rank", "2"))
@@ -107,7 +114,7 @@ class Bot(ABC):
                         self.cards_on_hand.remove_card(Card.parse(tribute_card))
                     if return_card:
                         self.cards_on_hand.add(Card.parse(return_card))
-        self.on_message(GameMessage.from_json(payload))
+        self.on_message(message)
 
 
 class BasicBot(Bot):
@@ -151,4 +158,3 @@ class BasicBot(Bot):
                 if can_play(hand, request.hand_on_table, number_of_decks=self.context.deck_count):
                     return hand
         return Hand.empty_hand()
-

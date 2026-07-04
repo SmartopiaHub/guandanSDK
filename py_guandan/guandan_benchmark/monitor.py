@@ -4,11 +4,10 @@ import json
 import time
 from typing import Optional
 
-import requests
-
-from .client import log, utc_now
+from .client import _get, log, utc_now
 from .display import _print_round_end, _print_round_start, _print_round_score, _update_seat_map, print_agent_message
 from .tracker import GameTracker
+from py_guandan.http import HttpConnectionError, HttpTimeoutError
 
 
 def monitor_events(
@@ -50,7 +49,7 @@ def monitor_events(
         log("INFO", f"  Last-Event-ID: {last_event_id}")
 
     try:
-        resp = requests.get(
+        resp = _get(
             events_url,
             headers={
                 "Authorization": f"Bearer {access_token}",
@@ -162,9 +161,15 @@ def monitor_events(
                             pts = f"R{d['red_pts']}–B{d['blue_pts']}"
                             winner = d["winner"]
                             rankings = d["rankings"]
-                            rank_str = " | ".join(
-                                f"{rk}: {tm}" for rk, tm in rankings.items()
-                            )
+                            rank_parts = []
+                            for rk, info in rankings.items():
+                                if isinstance(info, dict):
+                                    rank_parts.append(
+                                        f"{rk}: {info['seat']} ({info['team']})"
+                                    )
+                                else:
+                                    rank_parts.append(f"{rk}: {info}")
+                            rank_str = " | ".join(rank_parts)
                             log("INFO",
                                 f"    Round {rn:2d}: {pts:7s}  "
                                 f"winner={winner:4s}  [{rank_str}]")
@@ -239,10 +244,10 @@ def monitor_events(
             log("INFO", f"SSE stream ended. Collected {len(collected)} event(s). "
                          f"Termination: {termination}")
 
-    except requests.Timeout:
+    except HttpTimeoutError:
         log("WARN", f"SSE connection timed out after {timeout_s}s")
         termination = "timeout"
-    except requests.ConnectionError as e:
+    except HttpConnectionError as e:
         error_msg = str(e)
         log("ERROR", f"SSE connection error: {e}")
         termination = "connection_error"

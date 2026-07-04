@@ -65,11 +65,20 @@ def validate_api_key_format(api_key: str) -> Optional[str]:
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 
 
-def load_config(path: str) -> dict:
+def load_config(
+    path: str,
+    require_api_key: bool = True,
+    require_lobby_url: bool = True,
+) -> dict:
     """Load and validate the YAML configuration file.
 
     Returns a dict with the validated config on success.  Prints errors and
     calls ``sys.exit(1)`` on any missing or invalid field.
+
+    When *require_api_key* is ``False`` the ``developer_api_key`` field is
+    optional — the returned dict will have an empty ``api_key`` string.
+    Likewise, *require_lobby_url=False* allows an external source such as
+    ``LOBBY_SERVER_URL`` from ``.env`` to provide the URL.
     """
     if not os.path.exists(path):
         _fatal(f"Config file not found: {path}")
@@ -82,7 +91,8 @@ def load_config(path: str) -> dict:
     # -- api_key ---------------------------------------------------------------
     api_key = (cfg.get("developer_api_key", "") or "").strip()
     if not api_key:
-        errors.append("developer_api_key is missing or empty")
+        if require_api_key:
+            errors.append("developer_api_key is missing or empty")
     else:
         key_err = validate_api_key_format(api_key)
         if key_err:
@@ -90,7 +100,7 @@ def load_config(path: str) -> dict:
 
     # -- lobby_url -------------------------------------------------------------
     lobby_url = (cfg.get("lobby_url", "") or "").strip()
-    if not lobby_url:
+    if require_lobby_url and not lobby_url:
         errors.append("lobby_url is missing or empty")
 
     # -- num_rounds ------------------------------------------------------------

@@ -40,8 +40,8 @@ class GameTracker:
         """
         self.rounds_completed += 1
 
-        # Collect team assignments from rankings
-        rankings: dict[str, str] = {}  # rank_name → team ("red" | "blue")
+        # Collect team + seat assignments from rankings
+        rankings: dict[str, dict] = {}  # rank_name → {team, seat}
         seat_team: dict[int, str] = {
             1: "red", 3: "red",
             2: "blue", 4: "blue",
@@ -62,6 +62,14 @@ class GameTracker:
             seat = seat_map.get(pid)
             return seat_team.get(seat, "unknown") if seat is not None else "unknown"
 
+        def _seat(entry: Any, pid: str) -> object:
+            """Extract seat from the entry itself first, then fall back to seat_map."""
+            if isinstance(entry, dict):
+                s = entry.get("seat")
+                if s is not None:
+                    return s
+            return seat_map.get(pid)
+
         rank_entries: dict[str, Any] = {
             "first": round_result.get("first", round_result.get("banker")),
             "second": round_result.get("second", round_result.get("follower")),
@@ -76,18 +84,29 @@ class GameTracker:
         for rank_key, entry in rank_entries.items():
             pid = _pid(entry)
             if pid:
-                rankings[rank_key] = _team(entry, pid)
+                s = _seat(entry, pid)
+                rankings[rank_key] = {
+                    "team": _team(entry, pid),
+                    "seat": s if s is not None else "?",
+                }
 
         # Determine winner: the team holding first place (banker)
-        winner_team = rankings.get("first", "unknown")
+        first_entry = rankings.get("first", {})
+        winner_team = first_entry.get("team", "unknown") if isinstance(first_entry, dict) else first_entry
         if winner_team not in ("red", "blue"):
             return
 
         loser_team = "blue" if winner_team == "red" else "red"
 
         # Score based on what ranks the WINNING team holds
-        winner_ranks = {r for r, t in rankings.items() if t == winner_team}
-        loser_ranks = {r for r, t in rankings.items() if t == loser_team}
+        winner_ranks = {
+            r for r, info in rankings.items()
+            if (info.get("team") if isinstance(info, dict) else info) == winner_team
+        }
+        loser_ranks = {
+            r for r, info in rankings.items()
+            if (info.get("team") if isinstance(info, dict) else info) == loser_team
+        }
 
         # Winning team scoring
         if {"first", "second"}.issubset(winner_ranks):

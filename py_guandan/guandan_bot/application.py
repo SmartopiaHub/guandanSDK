@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
-from guandan_core import Card, Hand, PokerCardList
+from guandan_core import (
+    Card,
+    Hand,
+    PlayerPayTributeRequest,
+    PlayerPlayHandRequest,
+    PlayerReturnCardRequest,
+    PokerCardList,
+    ServerPlayHandRequest,
+    ServerReturnCardRequest,
+    ServerTributeRequest,
+)
 from guandan_core.hand_validator import validate_play, validate_return_card, validate_tribute_card
 
 from .bot import Bot, BotContext, PlayRequest, ReturnCardRequest, TributeRequest
@@ -68,16 +77,14 @@ class BotApplication:
         if session is None:
             return BotError(envelope.session_id, "unknown_session", "bot session has not been started")
         payload = envelope.payload
-        payload_type = payload.get("type")
-        available_raw = payload.get("available_cards")
-        if payload_type in {"sPlayHandRequest", "sTributeCardRequest", "sReturnCardRequest"}:
-            if not available_raw:
+        if isinstance(payload, (ServerPlayHandRequest, ServerTributeRequest, ServerReturnCardRequest)):
+            if payload.available_cards is None or payload.available_cards.is_empty:
                 return None  # request was broadcast, but targets another player
-            cards = PokerCardList.parse(available_raw, payload.get("level_rank", "2"))
+            cards = PokerCardList.from_list(payload.available_cards.cards)
             session.bot.cards_on_hand = PokerCardList.from_list(cards.cards)
-            if payload_type == "sPlayHandRequest":
+            if isinstance(payload, ServerPlayHandRequest):
                 response = self._play(session, payload, cards)
-            elif payload_type == "sTributeCardRequest":
+            elif isinstance(payload, ServerTributeRequest):
                 response = self._tribute(session, payload, cards)
             else:
                 response = self._return_card(session, payload, cards)
@@ -85,18 +92,23 @@ class BotApplication:
         session.bot._receive(payload)
         return None
 
-    def _play(self, session: _Session, payload: dict[str, Any], cards: PokerCardList) -> dict[str, Any]:
-        table = Hand.parse(payload.get("hand_on_table", ""))
+    def _play(
+        self,
+        session: _Session,
+        payload: ServerPlayHandRequest,
+        cards: PokerCardList,
+    ) -> PlayerPlayHandRequest:
+        table = payload.hand_on_table or Hand.empty_hand()
         request = PlayRequest(
             cards=cards,
             hand_on_table=table,
-            level_rank=payload.get("level_rank", "2"),
-            room_id=payload.get("room_id", ""),
-            game_id=payload.get("game_id", ""),
-            round_id=payload.get("round_id", ""),
-            turn_id=payload.get("turn_id", ""),
-            seat_of_hand_on_table=payload.get("seat_of_hand_on_table"),
-            game_state_snapshot=payload.get("game_state_snapshot"),
+            level_rank=payload.level_rank,
+            room_id=payload.room_id,
+            game_id=payload.game_id,
+            round_id=payload.round_id,
+            turn_id=payload.turn_id,
+            seat_of_hand_on_table=payload.seat_of_hand_on_table,
+            game_state_snapshot=payload.game_state_snapshot,
         )
         hand = session.bot.play_hand(request)
         if not isinstance(hand, Hand):
@@ -105,19 +117,51 @@ class BotApplication:
         valid, reason = validate_play(card_string, cards, table, request.level_rank)
         if not valid:
             raise InvalidBotDecision(reason)
-        return self._response(payload, session, "pPlayHandRequest", cards=card_string, turn_id=request.turn_id)
+        return PlayerPlayHandRequest(
+            room_id=payload.room_id,
+            game_id=payload.game_id,
+            player_id=session.context.player_id,
+            cards=PokerCardList.from_string(card_string, payload.level_rank),
+            round_id=payload.round_id,
+            turn_id=request.turn_id,
+            bot_code=self.bot_code,
+        )
 
-    def _tribute(self, session: _Session, payload: dict[str, Any], cards: PokerCardList) -> dict[str, Any]:
-        request = TributeRequest(cards, payload.get("room_id", ""), payload.get("game_id", ""), payload.get("round_id", ""))
+    def _tribute(
+        self,
+        session: _Session,
+        payload: ServerTributeRequest,
+        cards: PokerCardList,
+    ) -> PlayerPayTributeRequest:
+        request = TributeRequest(cards, payload.room_id, payload.game_id, payload.round_id)
         card = session.bot.tribute_card(request)
         self._validate_card(card, cards, validate_tribute_card)
-        return self._response(payload, session, "pPayTributeRequest", tribute_card=str(card))
+        return PlayerPayTributeRequest(
+            room_id=payload.room_id,
+            game_id=payload.game_id,
+            player_id=session.context.player_id,
+            tribute=card,
+            round_id=payload.round_id,
+            bot_code=self.bot_code,
+        )
 
-    def _return_card(self, session: _Session, payload: dict[str, Any], cards: PokerCardList) -> dict[str, Any]:
-        request = ReturnCardRequest(cards, payload.get("room_id", ""), payload.get("game_id", ""), payload.get("round_id", ""))
+    def _return_card(
+        self,
+        session: _Session,
+        payload: ServerReturnCardRequest,
+        cards: PokerCardList,
+    ) -> PlayerReturnCardRequest:
+        request = ReturnCardRequest(cards, payload.room_id, payload.game_id, payload.round_id)
         card = session.bot.return_card(request)
         self._validate_card(card, cards, validate_return_card)
-        return self._response(payload, session, "pReturnCardRequest", return_card=str(card))
+        return PlayerReturnCardRequest(
+            room_id=payload.room_id,
+            game_id=payload.game_id,
+            player_id=session.context.player_id,
+            return_card=card,
+            round_id=payload.round_id,
+            bot_code=self.bot_code,
+        )
 
     @staticmethod
     def _validate_card(card: Card, cards: PokerCardList, validator: Callable[..., tuple[bool, str]]) -> None:
@@ -126,15 +170,3 @@ class BotApplication:
         valid, reason = validator(str(card), cards)
         if not valid:
             raise InvalidBotDecision(reason)
-
-    def _response(self, payload: dict[str, Any], session: _Session, message_type: str, **fields: Any) -> dict[str, Any]:
-        return {
-            "type": message_type,
-            "room_id": payload.get("room_id", ""),
-            "game_id": payload.get("game_id", ""),
-            "player_id": session.context.player_id,
-            "round_id": payload.get("round_id", ""),
-            "bot_code": self.bot_code,
-            **fields,
-        }
-

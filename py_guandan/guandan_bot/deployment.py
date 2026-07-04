@@ -42,12 +42,11 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+
+from py_guandan.http import HttpResponseError, HttpTransportError, http_client
 
 
 class BotDeploymentError(RuntimeError):
@@ -235,21 +234,18 @@ class BotDeploymentClient:
         if method in ("POST",):
             headers["Idempotency-Key"] = str(uuid.uuid4())
 
-        data = json.dumps(body).encode() if body is not None else None
-        request = Request(url, data=data, headers=headers, method=method)
-
         try:
-            with urlopen(request, timeout=self.timeout) as response:
-                if method == "DELETE" and response.status == 204:
-                    return {"deleted": True}
-                return json.load(response)  # type: ignore[no-any-return]
-        except HTTPError as exc:
-            try:
-                detail = json.load(exc)
-            except Exception:
-                detail = exc.read().decode(errors="replace")
+            result = http_client.request_json(
+                method,
+                url,
+                body=body,
+                headers=headers,
+                timeout=self.timeout,
+            )
+            return {"deleted": True} if method == "DELETE" else result
+        except HttpResponseError as exc:
             raise BotDeploymentError(
-                f"{method} {path} failed: HTTP {exc.code}: {detail}"
+                f"{method} {path} failed: HTTP {exc.status_code}: {exc.detail}"
             ) from exc
-        except OSError as exc:
+        except HttpTransportError as exc:
             raise BotDeploymentError(f"{method} {path} failed: {exc}") from exc

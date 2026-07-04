@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+
+from py_guandan.http import HttpTransportError, http_client
 
 
 @dataclass(frozen=True)
@@ -113,23 +112,19 @@ class TestGame:
     def start(cls, config: TestGameConfig) -> "TestGame":
         """Create and auto-start a game using the same API as ``benchmark.py``."""
         url = f"{config.lobby_url.rstrip('/')}/api/v1/test-games"
-        request = Request(
-            url,
-            data=json.dumps(config.payload()).encode(),
-            headers={
-                "Authorization": f"Bearer {config.api_key}",
-                "Idempotency-Key": str(uuid.uuid4()),
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
         try:
-            with urlopen(request, timeout=config.timeout) as response:
-                data = json.load(response)
-        except HTTPError as exc:
-            body = exc.read().decode(errors="replace")
-            raise TestGameError(f"test game creation failed: HTTP {exc.code}: {body}") from exc
-        except OSError as exc:
+            data = http_client.request_json(
+                "POST",
+                url,
+                body=config.payload(),
+                headers={
+                    "Authorization": f"Bearer {config.api_key}",
+                    "Idempotency-Key": str(uuid.uuid4()),
+                    "Content-Type": "application/json",
+                },
+                timeout=config.timeout,
+            )
+        except HttpTransportError as exc:
             raise TestGameError(f"test game creation failed: {exc}") from exc
         return cls(data)
 
@@ -138,9 +133,13 @@ class TestGame:
         token = self.runtime.get("access_token")
         if not url or not token:
             raise TestGameError("game response has no cancel_url or access_token")
-        request = Request(url, headers={"Authorization": f"Bearer {token}"}, method="POST")
         try:
-            with urlopen(request, timeout=timeout):
-                return
-        except OSError as exc:
+            response = http_client.request(
+                "POST",
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=timeout,
+            )
+            http_client.require_success(response, method="POST", url=url)
+        except HttpTransportError as exc:
             raise TestGameError(f"test game cancellation failed: {exc}") from exc

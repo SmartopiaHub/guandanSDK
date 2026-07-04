@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
 """Run a benchmark game using all built-in bots.
 
-Prompts for lobby credentials, discovers or creates a developer API key,
-then runs a fully automated test game with the :mod:`guandan_benchmark`
-module.
+Reads an optional ``.env`` file from the current working directory to
+resolve credentials and configuration:
+
+* ``DEV_API_KEY`` — use this API key directly (skips login).
+* ``USERNAME`` / ``PASSWORD`` — log in with these credentials, then
+  create a new developer API key.
+* ``CONFIG_FILE`` — path to a YAML config file (see
+  ``guandan_benchmark/config.yaml.example``).  When absent the built-in
+  defaults are printed and confirmed interactively.
+* ``LOBBY_SERVER_URL`` — lobby server URL. This overrides the value in the YAML
+  config when both are present.
+
+When no API key is found in ``.env`` or the config file, a fresh key is
+created and the user is offered to persist it to ``.env``.  The server
+only stores key hashes, so existing keys cannot be retrieved.
+
+If none of the above are found in ``.env``, the user is prompted
+interactively.
 
 Usage::
 
@@ -13,12 +28,11 @@ Usage::
 from __future__ import annotations
 
 import json
+import os
 import select
 import sys
 from datetime import datetime
 from typing import Any
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 from guandan_benchmark import (
     GameTracker,
@@ -26,9 +40,13 @@ from guandan_benchmark import (
     check_game_server_reachable,
     check_lobby_reachable,
     create_test_game,
+    discover_deployments,
     monitor_events,
     print_report,
 )
+from guandan_benchmark.config import load_config
+from py_guandan.http import http_client
+
 
 # ---------------------------------------------------------------------------
 # Terminal helpers
@@ -90,25 +108,13 @@ def api_request(
         request_headers["Authorization"] = f"Bearer {bearer}"
     if headers:
         request_headers.update(headers)
-    request = Request(
+    return http_client.request_json(
+        method,
         url,
-        data=json.dumps(body).encode() if body is not None else None,
+        body=body,
         headers=request_headers,
-        method=method,
+        timeout=timeout,
     )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else {"ok": True}
-    except HTTPError as error:
-        raw = error.read().decode(errors="replace")
-        try:
-            detail: Any = json.loads(raw)
-        except json.JSONDecodeError:
-            detail = raw
-        raise RuntimeError(
-            f"{method} {url} returned HTTP {error.code}: {detail}"
-        ) from error
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +132,61 @@ def _timed_input(prompt: str, timeout: float) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# .env file loading
+# ---------------------------------------------------------------------------
+
+
+def _load_dotenv(path: str | None = None) -> dict[str, str]:
+    """Parse a ``.env`` file from the current working directory.
+
+    Returns a dict of key-value pairs.  Handles comments (``#``), blank
+    lines, and single- or double-quoted values.  Returns an empty dict if
+    the file does not exist.
+    """
+    if path is None:
+        path = os.path.join(os.getcwd(), ".env")
+    elif not os.path.isabs(path):
+        path = os.path.join(os.getcwd(), path)
+
+    result: dict[str, str] = {}
+    if not os.path.isfile(path):
+        return result
+
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            # Strip matching single or double quotes
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            result[key] = value
+    return result
+
+
+def _resolve_lobby_url(
+    env: dict[str, str],
+    config_lobby_url: str,
+    *,
+    prompt=input,
+) -> str:
+    """Resolve the lobby URL using .env, YAML, then interactive input."""
+
+    lobby_url = env.get("LOBBY_SERVER_URL", "").strip() or config_lobby_url.strip()
+    if not lobby_url:
+        lobby_url = (
+            prompt("Lobby server URL [http://localhost:8686]: ").strip()
+            or "http://localhost:8686"
+        )
+    return lobby_url.rstrip("/")
+
+
+# ---------------------------------------------------------------------------
 # Default benchmark config (everything except api_key / lobby_url)
 # ---------------------------------------------------------------------------
 DEFAULT_NUM_ROUNDS = 2
@@ -140,155 +201,106 @@ DEFAULT_BOT_CONFIGS: dict[int, dict] = {
     4: {"type": "builtin", "bot_code": "basicBot"},
 }
 
-# Maximum number of existing keys to display
-_MAX_KEYS_TO_SHOW = 5
-# Seconds to wait before auto-selecting the most recent key
-_AUTO_SELECT_TIMEOUT = 10
+# Seconds to wait before auto-confirming key deletion
+_AUTO_DELETE_TIMEOUT = 10
+
 
 # ---------------------------------------------------------------------------
-# API key resolution
+# Default config confirmation (when no CONFIG_FILE is provided)
 # ---------------------------------------------------------------------------
 
 
-def _fetch_valid_keys(
-    lobby_url: str, access_token: str
-) -> list[dict[str, Any]]:
-    """Fetch and return active keys that have ``test_games:create`` scope.
+def _print_defaults() -> None:
+    """Print the default benchmark configuration for user review."""
+    print(f"\n{Colour.BOLD}Default benchmark configuration:{Colour.RESET}")
+    print(f"  {Colour.CYAN}Lobby URL:{Colour.RESET}          (will prompt)")
+    print(f"  {Colour.CYAN}Num rounds:{Colour.RESET}         {DEFAULT_NUM_ROUNDS}")
+    print(f"  {Colour.CYAN}Total timeout:{Colour.RESET}      {DEFAULT_TOTAL_TIMEOUT}s")
+    print(
+        f"  {Colour.CYAN}Heartbeat timeout:{Colour.RESET}  {DEFAULT_HEARTBEAT_TIMEOUT}s"
+    )
+    print(f"  {Colour.CYAN}Bots:{Colour.RESET}")
+    for seat in sorted(DEFAULT_BOT_CONFIGS):
+        cfg = DEFAULT_BOT_CONFIGS[seat]
+        label = cfg.get("bot_code") or cfg.get("deployment_id", "?")
+        print(f"    Seat {seat}: {cfg['type']} / {label}")
 
-    Keys are sorted by ``created_at`` descending (most recent first).
+
+def _confirm_defaults(timeout: float = 60.0) -> bool:
+    """Ask the user to confirm the defaults or abort.
+
+    Returns ``True`` if the user confirms, ``False`` otherwise.
+    After *timeout* seconds of inactivity the defaults are accepted.
     """
-    resp = api_request(
-        "GET",
-        f"{lobby_url}/api/v1/developer/keys",
-        bearer=access_token,
+    answer = _timed_input(
+        f"\n  {Colour.YELLOW}Proceed with these defaults?"
+        f" [Y/n]{Colour.RESET} "
+        f"{Colour.DIM}(auto-confirm in {timeout:.0f}s){Colour.RESET}: ",
+        timeout,
     )
-    all_keys: list[dict[str, Any]] = resp.get("keys", [])
-    valid: list[dict[str, Any]] = []
-    for k in all_keys:
-        if k.get("status") != "active":
-            continue
-        if "test_games:create" in k.get("scopes", []):
-            valid.append(k)
-    valid.sort(key=lambda k: k.get("created_at", ""), reverse=True)
-    return valid
+    return answer is None or answer.strip().lower() in ("", "y", "yes")
 
 
-def _display_keys(keys: list[dict[str, Any]]) -> None:
-    """Print a formatted table of keys for the user to choose from."""
-    print(
-        f"\n  {'':4s} {'KEY ID':12s}  {'NAME':36s}"
-        f"  {'SCOPES':48s}  {'CREATED':10s}"
-    )
-    print(
-        f"  {'':4s} {'-' * 12}  {'-' * 36}"
-        f"  {'-' * 48}  {'-' * 10}"
-    )
-    for i, k in enumerate(keys, 1):
-        scopes_str = ", ".join(k.get("scopes", []))
-        created = (k.get("created_at", "") or "")[:10]
-        name = (k.get("name", "") or "")[:36]
-        print(
-            f"  [{i}]  {k['key_id']:12s}  {name:36s}"
-            f"  {scopes_str:48s}  {created:10s}"
-        )
+# ---------------------------------------------------------------------------
+# API key creation
+# ---------------------------------------------------------------------------
 
 
-def _prompt_for_api_key_value(key_id: str) -> str:
-    """Ask the user to paste the API key value for an existing key."""
+def _write_to_dotenv(env_path: str, key: str, value: str) -> None:
+    """Write or update a key-value pair in the ``.env`` file.
+
+    If the file does not exist it is created.  Existing lines for *key*
+    are replaced in-place; other comments and keys are preserved.
+    """
+    if os.path.isfile(env_path):
+        with open(env_path, "r", encoding="utf-8") as fh:
+            lines = fh.readlines()
+    else:
+        lines = []
+
+    updated = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            existing_key, _, _ = stripped.partition("=")
+            if existing_key.strip() == key:
+                lines[i] = f"{key}={value}\n"
+                updated = True
+                break
+
+    if not updated:
+        # Append to existing file (with a trailing newline if needed)
+        if lines and not lines[-1].endswith("\n"):
+            lines.append("\n")
+        lines.append(f"{key}={value}\n")
+
+    with open(env_path, "w", encoding="utf-8") as fh:
+        fh.writelines(lines)
+
+
+def _prompt_api_key_workflow(
+    lobby_url: str, access_token: str, env_path: str
+) -> tuple[str, str, bool]:
+    """Prompt the user to create a new developer API key.
+
+    The server only stores key hashes, so existing keys cannot be
+    retrieved.  This workflow always creates a fresh key and offers to
+    persist it.
+
+    Returns ``(api_key, key_id, should_delete)``.
+    """
     print()
     print(
-        f"  {Colour.YELLOW}The API key value is only shown at creation"
-        f" time and cannot be retrieved later.{Colour.RESET}"
+        f"  {Colour.YELLOW}No API key found in .env or config.yaml.{Colour.RESET}"
     )
-    print(
-        f"  {Colour.YELLOW}If you no longer have it, re-run and choose"
-        f" 'n' to create a new key instead.{Colour.RESET}"
-    )
-    while True:
-        value = input(
-            f"  Paste API key for {Colour.CYAN}{key_id}{Colour.RESET}: "
-        ).strip()
-        if value:
-            return value
-        print(f"  {Colour.RED}API key value cannot be empty.{Colour.RESET}")
+    answer = input(
+        f"  Create a new developer API key? [Y/n]: "
+    ).strip().lower()
+    if answer not in ("", "y", "yes"):
+        log("Aborted by user — no API key available", colour=Colour.RED)
+        sys.exit(1)
 
-
-def _select_existing_key(
-    lobby_url: str, access_token: str, valid_keys: list[dict[str, Any]]
-) -> tuple[str, str, bool]:
-    """Let the user pick an existing key or create a new one.
-
-    Returns ``(api_key, key_id, should_delete)``.
-    *should_delete* is always ``False`` for existing keys.
-    """
-    display_keys = valid_keys[:_MAX_KEYS_TO_SHOW]
-    _display_keys(display_keys)
-
-    extra = (
-        f" (showing most recent {_MAX_KEYS_TO_SHOW} of {len(valid_keys)})"
-        if len(valid_keys) > _MAX_KEYS_TO_SHOW
-        else ""
-    )
-    print(
-        f"\n  {Colour.GREEN}⏳  Auto-selecting key [1] in"
-        f" {_AUTO_SELECT_TIMEOUT} seconds …{Colour.RESET}{extra}"
-    )
-    print(
-        f"  {Colour.DIM}Enter 1-{len(display_keys)} to pick a key,"
-        f" 'n' to create a new one, or wait for auto-select:{Colour.RESET}"
-    )
-
-    choice = _timed_input("  > ", _AUTO_SELECT_TIMEOUT)
-
-    if choice is None:
-        # ── timeout: auto-select most recent ──
-        selected = display_keys[0]
-        log(
-            "Auto-selected key",
-            f"{selected['key_id']}  ({selected.get('name', '')})",
-            colour=Colour.GREEN,
-        )
-        api_key = _prompt_for_api_key_value(selected["key_id"])
-        return api_key, selected["key_id"], False
-
-    choice = choice.strip()
-
-    if choice.lower() in ("n", "new"):
-        return _create_new_key(lobby_url, access_token)
-
-    # Try numeric choice
-    try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(display_keys):
-            selected = display_keys[idx]
-            log(
-                "Selected key",
-                f"{selected['key_id']}  ({selected.get('name', '')})",
-                colour=Colour.GREEN,
-            )
-            api_key = _prompt_for_api_key_value(selected["key_id"])
-            return api_key, selected["key_id"], False
-    except ValueError:
-        pass
-
-    # Unrecognised — fall back to auto-select
-    log(
-        "Unrecognised input",
-        "auto-selecting most recent key",
-        colour=Colour.YELLOW,
-    )
-    selected = display_keys[0]
-    api_key = _prompt_for_api_key_value(selected["key_id"])
-    return api_key, selected["key_id"], False
-
-
-def _create_new_key(
-    lobby_url: str, access_token: str
-) -> tuple[str, str, bool]:
-    """Create a fresh API key and ask whether to delete it after the run.
-
-    Returns ``(api_key, key_id, should_delete)``.
-    """
+    # ── Create the key ──
     key = api_request(
         "POST",
         f"{lobby_url}/api/v1/developer/keys",
@@ -302,53 +314,35 @@ def _create_new_key(
             "scopes": ["test_games:create", "test_games:read"],
         },
     )
-    api_key, key_id = key["api_key"], key["key_id"]
-    log("API key created", key_id, colour=Colour.GREEN)
-    log_value("API key", api_key)
+    api_key_val: str = key["api_key"]
+    key_id_val: str = key["key_id"]
+    log("API key created", key_id_val, colour=Colour.GREEN)
+    log_value("API key", api_key_val)
 
-    # Ask about cleanup
+    # ── Offer to persist to .env ──
+    print()
+    answer = input(
+        f"  {Colour.YELLOW}Save API key to .env as DEV_API_KEY? [Y/n]{Colour.RESET} "
+    ).strip().lower()
+    if answer in ("", "y", "yes"):
+        _write_to_dotenv(env_path, "DEV_API_KEY", api_key_val)
+        log("API key saved to .env", env_path, colour=Colour.GREEN)
+        return api_key_val, key_id_val, False
+
+    # ── Not saving — ask about deletion ──
     print()
     answer = _timed_input(
         f"  {Colour.YELLOW}Delete this key after the benchmark?"
         f" [Y/n]{Colour.RESET} "
-        f"{Colour.DIM}(auto-delete in {_AUTO_SELECT_TIMEOUT} s){Colour.RESET}: ",
-        _AUTO_SELECT_TIMEOUT,
+        f"{Colour.DIM}(auto-delete in {_AUTO_DELETE_TIMEOUT} s){Colour.RESET}: ",
+        _AUTO_DELETE_TIMEOUT,
     )
     should_delete = answer is None or answer.strip().lower() not in ("n", "no")
     if should_delete:
         log("Will auto-delete key after benchmark", colour=Colour.DIM)
     else:
-        log("Will keep key after benchmark", key_id, colour=Colour.DIM)
-    return api_key, key_id, should_delete
-
-
-def _resolve_api_key(
-    lobby_url: str, access_token: str
-) -> tuple[str, str, bool]:
-    """Resolve a developer API key for the benchmark.
-
-    Returns ``(api_key, key_id, should_delete)`` where *should_delete*
-    indicates whether the cleanup step should delete the key.
-
-    Logic:
-    1. Fetch all active keys with ``test_games:create`` scope.
-    2. If any exist, display the most recent 5 and let the user pick one
-       (or create a new key).  Auto-select the most recent key after
-       {_AUTO_SELECT_TIMEOUT} seconds of inactivity.
-    3. If none exist, create a new key automatically.
-    """
-    valid_keys = _fetch_valid_keys(lobby_url, access_token)
-
-    if valid_keys:
-        return _select_existing_key(lobby_url, access_token, valid_keys)
-
-    # No valid keys — create one automatically
-    log(
-        "No existing test-game keys",
-        "creating a new one automatically",
-        colour=Colour.YELLOW,
-    )
-    return _create_new_key(lobby_url, access_token)
+        log("Will keep key after benchmark", key_id_val, colour=Colour.DIM)
+    return api_key_val, key_id_val, should_delete
 
 
 # ---------------------------------------------------------------------------
@@ -359,58 +353,125 @@ def main() -> int:
         f"{Colour.BOLD}Guandan Benchmark — Automated Bot Test{Colour.RESET}",
         flush=True,
     )
-    lobby_url = (
-        input("Lobby server URL [http://localhost:8686]: ").strip()
-        or "http://localhost:8686"
-    )
-    username = input("Username: ").strip()
-    password = input("Password: ").strip()
-    lobby_url = lobby_url.rstrip("/")
+
+    # ------------------------------------------------------------------
+    # Load .env from the current working directory
+    # ------------------------------------------------------------------
+    env = _load_dotenv()
+    env_path = os.path.join(os.getcwd(), ".env")
+
+    # ------------------------------------------------------------------
+    # Resolve benchmark configuration
+    # ------------------------------------------------------------------
+    config_file = env.get("CONFIG_FILE", "").strip()
+    if config_file:
+        log("Config file", config_file, colour=Colour.GREEN)
+        cfg = load_config(
+            config_file,
+            require_api_key=False,
+            require_lobby_url=not bool(env.get("LOBBY_SERVER_URL", "").strip()),
+        )
+        num_rounds: int = cfg["num_rounds"]
+        total_timeout: int = cfg["total_timeout"]
+        heartbeat_timeout: int = cfg["heartbeat_timeout"]
+        bot_configs: dict[int, dict] = cfg["bot_configs"]
+        cfg_lobby_url: str = cfg["lobby_url"]
+        cfg_api_key: str = cfg["api_key"]
+        log("Config loaded", f"{num_rounds} rounds, lobby={cfg_lobby_url}")
+    else:
+        _print_defaults()
+        if not _confirm_defaults():
+            log("Aborted by user", colour=Colour.YELLOW)
+            return 1
+        num_rounds = DEFAULT_NUM_ROUNDS
+        total_timeout = DEFAULT_TOTAL_TIMEOUT
+        heartbeat_timeout = DEFAULT_HEARTBEAT_TIMEOUT
+        bot_configs = DEFAULT_BOT_CONFIGS
+        cfg_lobby_url = ""
+        cfg_api_key = ""
+
+    # ------------------------------------------------------------------
+    # Resolve credentials
+    # ------------------------------------------------------------------
+    dev_api_key = env.get("DEV_API_KEY", "").strip()
+    env_username = env.get("USERNAME", "").strip()
+    env_password = env.get("PASSWORD", "").strip()
 
     access_token = ""
     api_key = ""
     key_id = ""
     should_delete_key = False
+    skip_login = False
+
+    if dev_api_key:
+        # ── DEV_API_KEY from .env takes top priority ──
+        api_key = dev_api_key
+        log("Using DEV_API_KEY from .env", colour=Colour.GREEN)
+        skip_login = True
+    elif cfg_api_key:
+        # ── api_key from config file ──
+        api_key = cfg_api_key
+        log("Using API key from config", colour=Colour.GREEN)
+        skip_login = True
+
+    # .env intentionally overrides the YAML value for local/environment-
+    # specific execution; prompt only when neither source provides a URL.
+    lobby_url = _resolve_lobby_url(env, cfg_lobby_url)
+
     cancel_url = ""
     game_token = ""
     game_completed = False
     game = None
 
     try:
-        # ------------------------------------------------------------------
-        # Step 1: Log in
-        # ------------------------------------------------------------------
-        step(1, "Log in")
-        login = api_request(
-            "POST",
-            f"{lobby_url}/api/auth/login",
-            body={"account": username, "password": password},
-        )
-        access_token = login["tokens"]["accessToken"]["token"]
-        log("Logged in", login["user"]["id"], colour=Colour.GREEN)
+        if skip_login:
+            # Credentials were provided — skip login and key resolution
+            current_step = 1
+        else:
+            # ------------------------------------------------------------------
+            # Step 1: Log in
+            # ------------------------------------------------------------------
+            step(1, "Log in")
+            username = env_username or input("Username: ").strip()
+            password = env_password or input("Password: ").strip()
+            if not username or not password:
+                log("Credentials required", colour=Colour.RED)
+                return 1
+            login = api_request(
+                "POST",
+                f"{lobby_url}/api/auth/login",
+                body={"account": username, "password": password},
+            )
+            access_token = login["tokens"]["accessToken"]["token"]
+            log("Logged in", login["user"]["id"], colour=Colour.GREEN)
+
+            # ------------------------------------------------------------------
+            # Step 2: Create API key
+            # ------------------------------------------------------------------
+            step(2, "Developer API key")
+            api_key, key_id, should_delete_key = _prompt_api_key_workflow(
+                lobby_url, access_token, env_path
+            )
+            current_step = 3
 
         # ------------------------------------------------------------------
-        # Step 2: Resolve API key (select existing or create new)
+        # Lobby health check
         # ------------------------------------------------------------------
-        step(2, "Developer API key")
-        api_key, key_id, should_delete_key = _resolve_api_key(
-            lobby_url, access_token
-        )
-
-        # ------------------------------------------------------------------
-        # Step 3: Lobby health check
-        # ------------------------------------------------------------------
-        step(3, "Lobby health check")
+        step(current_step, "Lobby health check")
         check_lobby_reachable(lobby_url)
         log("Lobby is healthy", colour=Colour.GREEN)
+        current_step += 1
 
         # ------------------------------------------------------------------
-        # Step 4: Build participants & create test game
+        # Build participants
         # ------------------------------------------------------------------
-        step(4, "Build participants")
+        step(current_step, "Build participants")
+        deployments = []
+        if any(cfg.get("type") == "deployed" for cfg in bot_configs.values()):
+            deployments = discover_deployments(lobby_url)
         participants = build_participants(
-            DEFAULT_BOT_CONFIGS,
-            deployments=[],  # no deployed bots — all built-in
+            bot_configs,
+            deployments=deployments,
             lobby_url=lobby_url,
             api_key=api_key,
         )
@@ -421,13 +482,17 @@ def main() -> int:
                 for p in participants
             ),
         )
+        current_step += 1
 
-        step(5, "Create test game")
+        # ------------------------------------------------------------------
+        # Create test game
+        # ------------------------------------------------------------------
+        step(current_step, "Create test game")
         game = create_test_game(
             lobby_url=lobby_url,
             api_key=api_key,
             participants=participants,
-            num_rounds=DEFAULT_NUM_ROUNDS,
+            num_rounds=num_rounds,
         )
         if game is None:
             raise RuntimeError("Test game creation failed")
@@ -438,19 +503,21 @@ def main() -> int:
         log("Test game created", game["test_game_id"], colour=Colour.GREEN)
         log_value("Game ID", game["game_id"])
         log_value("Runtime server", runtime.get("runtime_server_id", "?"))
+        current_step += 1
 
         # ------------------------------------------------------------------
-        # Step 6: Game server health check
+        # Game server health check
         # ------------------------------------------------------------------
-        step(6, "Game server health check")
+        step(current_step, "Game server health check")
         check_game_server_reachable(runtime.get("base_url", ""))
         log("Game server is healthy", colour=Colour.GREEN)
+        current_step += 1
 
         # ------------------------------------------------------------------
-        # Step 7: Monitor SSE events & track scores
+        # Monitor SSE events & track scores
         # ------------------------------------------------------------------
-        step(7, "Monitor game events")
-        tracker = GameTracker(total_rounds=DEFAULT_NUM_ROUNDS)
+        step(current_step, "Monitor game events")
+        tracker = GameTracker(total_rounds=num_rounds)
 
         warnings_list: list[str] = []
         errors: list[str] = []
@@ -458,8 +525,8 @@ def main() -> int:
         monitor_result = monitor_events(
             events_url=runtime["events_url"],
             access_token=game_token,
-            timeout_s=DEFAULT_TOTAL_TIMEOUT,
-            heartbeat_timeout=DEFAULT_HEARTBEAT_TIMEOUT,
+            timeout_s=total_timeout,
+            heartbeat_timeout=heartbeat_timeout,
             verbose=True,
             tracker=tracker,
         )
@@ -480,7 +547,7 @@ def main() -> int:
             )
         elif monitor_result["termination"] == "timeout":
             warnings_list.append(
-                f"Game did not complete within {DEFAULT_TOTAL_TIMEOUT}s. "
+                f"Game did not complete within {total_timeout}s. "
                 "It may still be running on the server."
             )
 
@@ -490,10 +557,12 @@ def main() -> int:
                 "before the SSE subscription was established."
             )
 
+        current_step += 1
+
         # ------------------------------------------------------------------
-        # Step 8: Print report
+        # Print report
         # ------------------------------------------------------------------
-        step(8, "Final report")
+        step(current_step, "Final report")
         config_for_report = {
             "lobby_url": lobby_url,
             "api_key": api_key,

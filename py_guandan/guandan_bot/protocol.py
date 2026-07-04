@@ -1,10 +1,31 @@
-"""Wire models for the ``guandan-bot-v1`` protocol."""
+"""Typed wire models for the ``guandan-bot-v1`` transport protocol.
+
+Transport messages are defined here.  The nested game payload uses the
+canonical models from :mod:`guandan_core.message`; it is never represented by
+a second set of protocol-specific dataclasses.
+"""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from typing import Any, ClassVar
+
+from guandan_core.message import (
+    GameMessage,
+    GameMessageFactory,
+)
+
+__all__ = [
+    "BotError",
+    "BotMessage",
+    "GameMessageEnvelope",
+    "SessionEnd",
+    "SessionEnded",
+    "SessionStart",
+    "SessionStarted",
+    "parse_message",
+]
 
 
 @dataclass(frozen=True)
@@ -105,23 +126,42 @@ class SessionEnded(SessionEnd):
 
 @dataclass(frozen=True)
 class GameMessageEnvelope(BotMessage):
-    payload: dict[str, Any]
+    """A bot transport envelope containing a typed core game message."""
+
+    payload: GameMessage
     request_id: str | None = None
     deadline_millis: int | None = None
     type: ClassVar[str] = "game_message"
+
+    def __post_init__(self) -> None:
+        # Accept dictionaries at API boundaries while ensuring callers always
+        # observe a typed payload after construction.
+        if isinstance(self.payload, dict):
+            object.__setattr__(
+                self,
+                "payload",
+                GameMessageFactory.from_json(self.payload),
+            )
+        elif not isinstance(self.payload, GameMessage):
+            raise TypeError("game_message payload must be a GameMessage or dictionary")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GameMessageEnvelope":
         payload = data.get("payload")
         if not isinstance(payload, dict):
             raise ValueError("game_message payload must be an object")
-        return cls(data["session_id"], payload, data.get("request_id"), data.get("deadline_millis"))
+        return cls(
+            data["session_id"],
+            GameMessageFactory.from_json(payload),
+            data.get("request_id"),
+            data.get("deadline_millis"),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
             "type": self.type,
             "session_id": self.session_id,
-            "payload": self.payload,
+            "payload": self.payload.to_json(),
         }
         if self.request_id is not None:
             data["request_id"] = self.request_id
@@ -138,7 +178,11 @@ class BotError(BotMessage):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BotError":
-        return cls(data.get("session_id", ""), data.get("code", "unknown_error"), data.get("message", ""))
+        return cls(
+            data.get("session_id", ""),
+            data.get("code", "unknown_error"),
+            data.get("message", ""),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -151,6 +195,18 @@ class BotError(BotMessage):
 
 _MESSAGE_TYPES: dict[str, type[BotMessage]] = {
     message.type: message
-    for message in (SessionStart, SessionStarted, SessionEnd, SessionEnded, GameMessageEnvelope, BotError)
+    for message in (
+        SessionStart,
+        SessionStarted,
+        SessionEnd,
+        SessionEnded,
+        GameMessageEnvelope,
+        BotError,
+    )
 }
 
+
+def parse_message(value: str | bytes | dict[str, Any]) -> BotMessage:
+    """Parse a transport message and its nested game payload."""
+
+    return BotMessage.parse(value)

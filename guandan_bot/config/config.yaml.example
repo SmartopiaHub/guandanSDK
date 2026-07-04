@@ -64,7 +64,7 @@ websocket_bot:
 # Lobby Server (for auto-registration)
 # ----------------------------------------------------------------------
 lobby:
-  # Base URL of the lobby server.  (env: LOBBY_URL)
+  # Base URL of the lobby server.  (env: LOBBY_SERVER_URL)
   url: "http://127.0.0.1:8686"
 
   # Developer access token for authenticating to the lobby API.

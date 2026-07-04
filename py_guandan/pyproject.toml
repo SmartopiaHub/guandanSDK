@@ -9,11 +9,13 @@ description = "Python Guandan core rules and bot development SDK."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Guandan contributors" }]
+dependencies = ["requests>=2"]
 
 [project.optional-dependencies]
 websocket = ["websockets>=11"]
-benchmark = ["requests>=2", "pyyaml>=6"]
-dev = ["pytest>=7", "websockets>=11", "requests>=2", "pyyaml>=6"]
+async-http = ["aiohttp>=3.9"]
+benchmark = ["pyyaml>=6"]
+dev = ["pytest>=7", "websockets>=11", "aiohttp>=3.9", "pyyaml>=6"]
 
 [tool.setuptools.packages.find]
 where = ["."]

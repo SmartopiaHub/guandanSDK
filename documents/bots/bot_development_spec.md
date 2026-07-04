@@ -176,7 +176,7 @@ verification:
 cd guandan_bot
 HTTP_BOT_PORT=10001 \
 HTTP_BOT_PUBLIC_BASE_URL=http://127.0.0.1:10001 \
-LOBBY_URL=http://127.0.0.1:8686 \
+LOBBY_SERVER_URL=http://127.0.0.1:8686 \
 DEVELOPER_ACCESS_TOKEN=<developer-access-token> \
 BOT_PROVIDER_ID=<provider-id> \
 BOT_DEFINITION_ID=<definition-id> \

@@ -7,6 +7,7 @@ import inspect
 import logging
 from typing import Any
 
+from ._websocket import loopback_proxy_options
 from .application import BotApplication
 from .protocol import BotError, BotMessage
 
@@ -54,7 +55,11 @@ class WebSocketBot:
                     if "additional_headers" in inspect.signature(websockets.connect).parameters
                     else "extra_headers"
                 )
-                connection = websockets.connect(uri, **{header_argument: headers})
+                connection = websockets.connect(
+                    uri,
+                    **{header_argument: headers},
+                    **loopback_proxy_options(websockets.connect, uri),
+                )
                 async with connection as socket:
                     self._socket = socket
                     async for raw in socket:

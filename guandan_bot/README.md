@@ -125,7 +125,7 @@ If a value is found at a higher priority, the lower ones are skipped. An empty/m
 
 | Key | Env Variable | Default | Description |
 |---|---|---|---|
-| `url` | `LOBBY_URL` | `http://127.0.0.1:8686` | Lobby server base URL |
+| `url` | `LOBBY_SERVER_URL` | `http://127.0.0.1:8686` | Lobby server base URL |
 | `access_token` | `LOBBY_ACCESS_TOKEN` or `DEVELOPER_ACCESS_TOKEN` | *(optional)* | Developer access token for lobby API authentication |
 
 ### Environment-only overrides

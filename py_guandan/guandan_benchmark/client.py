@@ -9,24 +9,18 @@ import sys
 import uuid
 from typing import Any, Optional
 
-import requests
+from py_guandan.http import HttpTransportError, http_client
 
 
 # ---------------------------------------------------------------------------
-# Shared HTTP session (no proxy — avoids local proxy interference)
+# Shared transport wrappers
 # ---------------------------------------------------------------------------
-_SESSION = requests.Session()
-_NO_PROXY = {"http": None, "https": None}
+def _get(url: str, **kwargs):
+    return http_client.request("GET", url, **kwargs)
 
 
-def _get(url: str, **kwargs) -> requests.Response:
-    kwargs.setdefault("proxies", _NO_PROXY)
-    return _SESSION.get(url, **kwargs)
-
-
-def _post(url: str, **kwargs) -> requests.Response:
-    kwargs.setdefault("proxies", _NO_PROXY)
-    return _SESSION.post(url, **kwargs)
+def _post(url: str, **kwargs):
+    return http_client.request("POST", url, **kwargs)
 
 
 def _fatal(msg: str) -> None:
@@ -60,7 +54,7 @@ def check_lobby_reachable(lobby_url: str) -> None:
     log("INFO", f"Checking lobby health at {health_url} ...")
     try:
         resp = _get(health_url, timeout=10)
-    except requests.RequestException as e:
+    except HttpTransportError as e:
         _fatal(f"Lobby server unreachable at {lobby_url}: {e}")
 
     if resp.status_code != 200:
@@ -93,7 +87,7 @@ def check_game_server_reachable(base_url: str) -> None:
     log("INFO", f"Checking game server health at {health_url} ...")
     try:
         resp = _get(health_url, timeout=10)
-    except requests.RequestException as e:
+    except HttpTransportError as e:
         _fatal(f"Game server unreachable at {base_url}: {e}")
 
     if resp.status_code != 200:
@@ -131,9 +125,10 @@ def discover_deployments(lobby_url: str) -> list[dict]:
     """
     log("INFO", f"Fetching public bot deployments from {lobby_url}/api/bots ...")
     try:
-        resp = _get(f"{lobby_url}/api/bots", timeout=10)
-        resp.raise_for_status()
-    except requests.RequestException as e:
+        url = f"{lobby_url}/api/bots"
+        resp = _get(url, timeout=10)
+        http_client.require_success(resp, method="GET", url=url)
+    except HttpTransportError as e:
         log("ERROR", f"Failed to fetch bot deployments: {e}")
         return []
 
@@ -201,7 +196,7 @@ def check_deployment_health(
             headers=headers,
             timeout=10,
         )
-    except requests.RequestException as e:
+    except HttpTransportError as e:
         return {"healthy": False, "response": None, "error": str(e)}
 
     if resp.status_code == 404:
@@ -412,7 +407,7 @@ def create_test_game(
             json=payload,
             timeout=15,
         )
-    except requests.RequestException as e:
+    except HttpTransportError as e:
         log("ERROR", f"Request failed: {e}")
         return None
 

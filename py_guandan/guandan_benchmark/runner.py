@@ -20,6 +20,7 @@ from .client import (
     discover_deployments,
     build_participants,
     log,
+    _post,
 )
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .display import print_report
@@ -187,12 +188,10 @@ def main(argv: list[str] | None = None) -> int:
         cancel_url = runtime.get("cancel_url", "")
         if cancel_url:
             try:
-                import requests
-                requests.post(
+                _post(
                     cancel_url,
                     headers={"Authorization": f"Bearer {access_token}"},
                     timeout=5,
-                    proxies={"http": None, "https": None},
                 )
                 log("INFO", "Game cancelled.")
             except Exception:

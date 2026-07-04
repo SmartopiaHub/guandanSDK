@@ -518,14 +518,20 @@ def print_report(
         # Per-round breakdown
         print("    Per-round:")
         print(f"    {'Round':6s} {'Red':6s} {'Blue':6s} {'Winner':8s}  Rankings")
-        print(f"    {'-' * 6} {'-' * 6} {'-' * 6} {'-' * 8}  {'-' * 30}")
+        print(f"    {'-' * 6} {'-' * 6} {'-' * 6} {'-' * 8}  {'-' * 50}")
         for d in tracker.round_details:
             rn = d["round"]
             rp = d["red_pts"]
             bp = d["blue_pts"]
             wn = d["winner"]
             ranks = d["rankings"]
-            rank_str = " | ".join(f"{rk}: {tm}" for rk, tm in ranks.items())
+            rank_parts = []
+            for rk, info in ranks.items():
+                if isinstance(info, dict):
+                    rank_parts.append(f"{rk}: {info['seat']} ({info['team']})")
+                else:
+                    rank_parts.append(f"{rk}: {info}")
+            rank_str = " | ".join(rank_parts)
             print(f"    {rn:<6} {rp:<6} {bp:<6} {wn:<8}  {rank_str}")
         print()
     elif tracker:

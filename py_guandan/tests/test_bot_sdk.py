@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from urllib.request import Request, urlopen
 
 import pytest
 
@@ -23,6 +22,7 @@ from guandan_bot import (
 )
 from guandan_core import Card, Hand, HandType
 from guandan_core.hand_validator import detect_hand
+from py_guandan.http import HttpResponseError, http_client
 
 
 class ThreeMethodBot(Bot):
@@ -155,22 +155,30 @@ def test_http_transport_lifecycle_and_auth() -> None:
     application = BotApplication(ThreeMethodBot)
     with HttpBotServer(application, invocation_key="secret") as server:
         payload = SessionStart("http-session", player_id="p1", seat=1).to_json().encode()
-        unauthorized = Request(f"{server.base_url}/sessions", data=payload, method="POST")
-        with pytest.raises(Exception) as error:
-            urlopen(unauthorized)
-        assert error.value.code == 401
+        sessions_url = f"{server.base_url}/sessions"
+        with pytest.raises(HttpResponseError) as error:
+            http_client.request_json(
+                "POST",
+                sessions_url,
+                body=json.loads(payload),
+            )
+        assert error.value.status_code == 401
 
-        request = Request(
-            f"{server.base_url}/sessions", data=payload,
-            headers={"Authorization": "Bearer secret", "Content-Type": "application/json"}, method="POST",
+        response = http_client.request_json(
+            "POST",
+            sessions_url,
+            body=json.loads(payload),
+            headers={"Authorization": "Bearer secret"},
         )
-        with urlopen(request) as response:
-            assert json.load(response)["accepted"] is True
+        assert response["accepted"] is True
         assert application.session_count == 1
 
-        delete = Request(f"{server.base_url}/sessions/http-session", headers={"X-Api-Key": "secret"}, method="DELETE")
-        with urlopen(delete) as response:
-            assert json.load(response)["type"] == "session_ended"
+        response = http_client.request_json(
+            "DELETE",
+            f"{sessions_url}/http-session",
+            headers={"X-Api-Key": "secret"},
+        )
+        assert response["type"] == "session_ended"
         assert application.session_count == 0
 
 

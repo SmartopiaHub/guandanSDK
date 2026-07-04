@@ -355,7 +355,7 @@ class BotConfigLoader {
 
     // ---- Auto-registration fields (all optional) ----
     final lobbyUrl = _resolveOptionalString(
-      envName: 'LOBBY_URL',
+      envName: 'LOBBY_SERVER_URL',
       yamlPath: ['lobby', 'url'],
       promptLabel: 'Lobby URL',
       defaultValue: 'http://127.0.0.1:8686',

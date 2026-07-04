@@ -11,9 +11,11 @@ setup(
     long_description_content_type="text/markdown",
     python_requires=">=3.10",
     packages=find_packages(include=("guandan_core*", "guandan_bot*", "py_guandan*", "guandan_benchmark*")),
+    install_requires=["requests>=2"],
     extras_require={
         "websocket": ["websockets>=11"],
-        "benchmark": ["requests>=2", "pyyaml>=6"],
-        "dev": ["pytest>=7", "websockets>=11", "requests>=2", "pyyaml>=6"],
+        "async-http": ["aiohttp>=3.9"],
+        "benchmark": ["pyyaml>=6"],
+        "dev": ["pytest>=7", "websockets>=11", "aiohttp>=3.9", "pyyaml>=6"],
     },
 )
