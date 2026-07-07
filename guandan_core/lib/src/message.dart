@@ -106,7 +106,10 @@ enum ServerResponseCode {
   invalidSeat,
 
   /// The requested seat is already taken and not available.
-  seatNotAvailable;
+  seatNotAvailable,
+
+  /// The client app version is below the server's minimum required version.
+  clientVersionOutdated;
 
   /// Parses a [ServerResponseCode] from its JSON-encoded [name] string.
   factory ServerResponseCode.fromName(String name) {
@@ -1125,6 +1128,10 @@ class JoinRoomRequest extends PlayerRequestMessage {
   /// new lobby-issued admission ticket.
   final String? reconnectToken;
 
+  /// The client app version as a semver string (e.g. `"0.0.343"`).
+  /// Used by the game server to reject outdated clients.
+  final String? clientVersion;
+
   JoinRoomRequest({
     super.messageId,
     required super.playerId,
@@ -1134,6 +1141,7 @@ class JoinRoomRequest extends PlayerRequestMessage {
     this.displayName,
     this.joinTicket,
     this.reconnectToken,
+    this.clientVersion,
   }) : super(type: MessageType.pJoinRoomRequest, gameId: gameId ?? '');
 
   factory JoinRoomRequest.fromJson(Map<String, dynamic> json) {
@@ -1146,6 +1154,7 @@ class JoinRoomRequest extends PlayerRequestMessage {
       displayName: json['display_name'] as String?,
       joinTicket: json['join_ticket'] as String?,
       reconnectToken: json['reconnect_token'] as String?,
+      clientVersion: json['client_version'] as String?,
     );
   }
 
@@ -1163,6 +1172,9 @@ class JoinRoomRequest extends PlayerRequestMessage {
     }
     if (reconnectToken != null) {
       json['reconnect_token'] = reconnectToken;
+    }
+    if (clientVersion != null) {
+      json['client_version'] = clientVersion;
     }
     return json;
   }
