@@ -689,7 +689,7 @@ class Round {
 
   /// The number of Ace-passing attempts for the current [teamOfLevelRank].
   /// Returns `null` when [levelRank] is not Ace or there is no previous round.
-  int? get aPlusTries {
+  int? get acePassingTries {
     if (levelRank != CardRank.A || previousRoundResult == null || teamOfLevelRank == null) {
       return null;
     }
@@ -963,9 +963,23 @@ class Round {
     currentPhase.updateStartPlayer(startPlayer);
   }
 
+
+  /// Is the round completed
+  bool get isComplete {
+    if (roundResult.banker == null || roundResult.follower == null) {
+      return false;
+    }
+    if (roundResult.banker!.team != roundResult.follower!.team &&
+        roundResult.third == null) {
+      return false;
+    }
+    completeRoundResult();
+    return roundResult.isValidAndComplete();
+  }
+
   /// Checks if the round has ended.
   bool get hasEnded {
-    return isEndOfRound(players);
+    return isComplete || isEndOfRound(players);
   }
 
   /// The ID of the next turn to be played in this round, or `null` if the
@@ -1706,7 +1720,7 @@ class GameState {
   }
 
   /// Converts the game state to a JSON object.
-  Map<String, dynamic> toJson({List<String>? includeCardsOnHandForPlayers, bool includePlayedCards = false, bool currentRoundOnly = true, bool includePlayerTypeInfo = false}) {
+  Map<String, dynamic> toJson({List<String>? includeCardsOnHandForPlayers, bool includePlayedCards = false, bool currentRoundOnly = true, bool includePlayerTypeInfo = false, bool includeRoundHandsAtStart = false}) {
     return {
       'game_id': id,
       'required_players': requiredPlayers,
@@ -1721,7 +1735,7 @@ class GameState {
       'team_level_rank': teamLevelRank.toJson(),
       'team_scores': teamScores.toJson(),
       'series': currentRoundOnly ? [] : series.map((s) => s.toJson()).toList(),
-      'rounds': (currentRoundOnly && rounds.isNotEmpty ? rounds.sublist(rounds.length-1) : rounds).map((round) => round.toJson(withCardsOnHand: false, withPlayedCards: false)).toList(),
+      'rounds': (currentRoundOnly && rounds.isNotEmpty ? rounds.sublist(rounds.length-1) : rounds).map((round) => round.toJson(withCardsOnHand: includeRoundHandsAtStart, withPlayedCards: false)).toList(),
     };
   }
 

@@ -76,10 +76,18 @@ class GameTracker:
             "third": round_result.get("third"),
             "fourth": round_result.get("fourth"),
         }
-        if rank_entries["fourth"] is None:
-            dwellers = round_result.get("dwellers")
-            if isinstance(dwellers, list) and dwellers:
-                rank_entries["fourth"] = dwellers[0]
+        raw_dwellers = round_result.get("dwellers")
+        dweller_entries = raw_dwellers if isinstance(raw_dwellers, list) else []
+
+        # A normal round has one dweller, which is equivalent to fourth place.
+        # In a double-down round the core model deliberately leaves ``third``
+        # unset and stores both losing players in ``dwellers``.  Keep those two
+        # players separate instead of discarding one or inventing an ordering.
+        if len(dweller_entries) > 1:
+            rank_entries["third"] = None
+            rank_entries["fourth"] = None
+        elif rank_entries["fourth"] is None and len(dweller_entries) == 1:
+            rank_entries["fourth"] = dweller_entries[0]
 
         for rank_key, entry in rank_entries.items():
             pid = _pid(entry)
@@ -89,6 +97,16 @@ class GameTracker:
                     "team": _team(entry, pid),
                     "seat": s if s is not None else "?",
                 }
+
+        dwellers: list[dict] = []
+        for entry in dweller_entries:
+            pid = _pid(entry)
+            if pid:
+                s = _seat(entry, pid)
+                dwellers.append({
+                    "team": _team(entry, pid),
+                    "seat": s if s is not None else "?",
+                })
 
         # Determine winner: the team holding first place (banker)
         first_entry = rankings.get("first", {})
@@ -119,7 +137,12 @@ class GameTracker:
             winner_pts = 0   # unexpected
 
         # Losing team scoring (determined by which ranks they hold)
-        if {"third", "fourth"}.issubset(loser_ranks):
+        if winner_pts == 3:
+            # First and second necessarily leave both opponents as dwellers.
+            # The wire model represents them in the ``dwellers`` list rather
+            # than as separate third/fourth fields.
+            loser_pts = -3
+        elif {"third", "fourth"}.issubset(loser_ranks):
             loser_pts = -3   # two dwellers (double-down)
         elif {"second", "fourth"}.issubset(loser_ranks):
             loser_pts = -2   # follower + dweller
@@ -145,6 +168,7 @@ class GameTracker:
         detail = {
             "round": self.rounds_completed,
             "rankings": rankings,
+            "dwellers": dwellers,
             "red_pts": red_round_pts,
             "blue_pts": blue_round_pts,
             "winner": winner,

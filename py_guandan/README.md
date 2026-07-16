@@ -415,7 +415,7 @@ round-completion summary:
 
 ```
 ▶ Round R1  level=2  teamLR=(R:2 B:2)  start=seat1
-◀ Round R1  first=S1(red) | second=S3(red) | fourth=S2(blue)
+◀ Round R1  first=S1(red) | second=S3(red) | dwellers=S2(blue),S4(blue)
 🏁 Round 1/10 completed (series 0/1)
    Score: Red 3 – Blue -3  (winner: red)
 ```

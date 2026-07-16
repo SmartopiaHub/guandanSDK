@@ -163,10 +163,14 @@ def _print_round_end(msg: dict, seat_map: Optional[dict] = None) -> None:
         "third": rr.get("third"),
         "fourth": rr.get("fourth"),
     }
-    if rank_entries["fourth"] is None:
-        dwellers = rr.get("dwellers")
-        if isinstance(dwellers, list) and dwellers:
-            rank_entries["fourth"] = dwellers[0]
+    raw_dwellers = rr.get("dwellers")
+    dwellers = raw_dwellers if isinstance(raw_dwellers, list) else []
+    is_double_down = len(dwellers) > 1
+    if rank_entries["fourth"] is None and len(dwellers) == 1:
+        rank_entries["fourth"] = dwellers[0]
+    if is_double_down:
+        rank_entries["third"] = None
+        rank_entries["fourth"] = None
 
     for rank_key, entry in rank_entries.items():
         if isinstance(entry, dict):
@@ -184,7 +188,50 @@ def _print_round_end(msg: dict, seat_map: Optional[dict] = None) -> None:
         else:
             team = seat_team.get(seat, "?")
         parts.append(f"{rank_key}=S{seat}({team})")
+
+    if is_double_down:
+        dweller_parts = []
+        for entry in dwellers:
+            if isinstance(entry, dict):
+                pid = entry.get("player_id", entry.get("id", "?"))
+            elif isinstance(entry, str):
+                pid = entry
+            else:
+                continue
+            seat = seat_map.get(pid, "?") if seat_map else "?"
+            team = entry.get("team", "") if isinstance(entry, dict) else ""
+            if team == "redTeam":
+                team = "red"
+            elif team == "blueTeam":
+                team = "blue"
+            else:
+                team = seat_team.get(seat, "?")
+            dweller_parts.append(f"S{seat}({team})")
+        if dweller_parts:
+            parts.append(f"dwellers={','.join(dweller_parts)}")
     log("INFO", f"◀ Round {round_id}  {' | '.join(parts)}")
+
+
+def _format_round_detail_rankings(detail: dict) -> str:
+    """Format tracker rankings, preserving both dwellers in double-down rounds."""
+    rank_parts = []
+    for rank, info in detail.get("rankings", {}).items():
+        if isinstance(info, dict):
+            rank_parts.append(f"{rank}: {info['seat']} ({info['team']})")
+        else:
+            rank_parts.append(f"{rank}: {info}")
+
+    dwellers = detail.get("dwellers", [])
+    if isinstance(dwellers, list) and len(dwellers) > 1:
+        formatted = ", ".join(
+            f"{info['seat']} ({info['team']})"
+            for info in dwellers
+            if isinstance(info, dict)
+        )
+        if formatted:
+            rank_parts.append(f"dwellers: {formatted}")
+
+    return " | ".join(rank_parts)
 
 
 def _print_round_score(detail: dict) -> None:
@@ -524,14 +571,7 @@ def print_report(
             rp = d["red_pts"]
             bp = d["blue_pts"]
             wn = d["winner"]
-            ranks = d["rankings"]
-            rank_parts = []
-            for rk, info in ranks.items():
-                if isinstance(info, dict):
-                    rank_parts.append(f"{rk}: {info['seat']} ({info['team']})")
-                else:
-                    rank_parts.append(f"{rk}: {info}")
-            rank_str = " | ".join(rank_parts)
+            rank_str = _format_round_detail_rankings(d)
             print(f"    {rn:<6} {rp:<6} {bp:<6} {wn:<8}  {rank_str}")
         print()
     elif tracker:

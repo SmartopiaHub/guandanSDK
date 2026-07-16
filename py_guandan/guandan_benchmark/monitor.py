@@ -5,7 +5,14 @@ import time
 from typing import Optional
 
 from .client import _get, log, utc_now
-from .display import _print_round_end, _print_round_start, _print_round_score, _update_seat_map, print_agent_message
+from .display import (
+    _format_round_detail_rankings,
+    _print_round_end,
+    _print_round_start,
+    _print_round_score,
+    _update_seat_map,
+    print_agent_message,
+)
 from .tracker import GameTracker
 from py_guandan.http import HttpConnectionError, HttpTimeoutError
 
@@ -160,16 +167,7 @@ def monitor_events(
                             rn = d["round"]
                             pts = f"R{d['red_pts']}–B{d['blue_pts']}"
                             winner = d["winner"]
-                            rankings = d["rankings"]
-                            rank_parts = []
-                            for rk, info in rankings.items():
-                                if isinstance(info, dict):
-                                    rank_parts.append(
-                                        f"{rk}: {info['seat']} ({info['team']})"
-                                    )
-                                else:
-                                    rank_parts.append(f"{rk}: {info}")
-                            rank_str = " | ".join(rank_parts)
+                            rank_str = _format_round_detail_rankings(d)
                             log("INFO",
                                 f"    Round {rn:2d}: {pts:7s}  "
                                 f"winner={winner:4s}  [{rank_str}]")

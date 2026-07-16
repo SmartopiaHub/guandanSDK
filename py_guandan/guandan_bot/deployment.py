@@ -147,6 +147,7 @@ class BotDeploymentClient:
         transport_type: str,
         supported_bot_definition_ids: list[str],
         *,
+        base_url: str | None = None,
         supported_protocol_versions: list[str] | None = None,
         max_concurrent_sessions: int = 10,
         description: str = "",
@@ -161,16 +162,19 @@ class BotDeploymentClient:
         """
         if supported_protocol_versions is None:
             supported_protocol_versions = ["guandan-bot-v1"]
+        body = {
+            "provider_id": provider_id,
+            "transport_type": transport_type,
+            "supported_bot_definition_ids": supported_bot_definition_ids,
+            "supported_protocol_versions": supported_protocol_versions,
+            "max_concurrent_sessions": max_concurrent_sessions,
+            "description": description,
+        }
+        if base_url is not None:
+            body["base_url"] = base_url
         return self._post(
             "/api/v1/developer/bots/deployments",
-            {
-                "provider_id": provider_id,
-                "transport_type": transport_type,
-                "supported_bot_definition_ids": supported_bot_definition_ids,
-                "supported_protocol_versions": supported_protocol_versions,
-                "max_concurrent_sessions": max_concurrent_sessions,
-                "description": description,
-            },
+            body,
             scope="bots:manage",
         )
 

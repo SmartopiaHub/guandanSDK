@@ -32,6 +32,7 @@ void main() {
       gameState.newRound(startPlayer: player1);
       expect(gameState.currentRound!.id, 'R1');
       expect(gameState.currentRound!.startPlayer!.id, player1.id);
+      expect(gameState.currentRound!.hasEnded, isFalse);
     });
 
     test('Play Cards', () {

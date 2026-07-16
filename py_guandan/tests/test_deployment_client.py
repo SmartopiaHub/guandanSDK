@@ -22,3 +22,24 @@ def test_client_uses_central_http_client(monkeypatch) -> None:
         "GET",
         "http://127.0.0.1:8686/api/v1/developer/bots/providers",
     )
+
+
+def test_http_deployment_can_include_base_url(monkeypatch) -> None:
+    from guandan_bot import deployment
+
+    requests = []
+
+    def request_json(method, url, **kwargs):
+        requests.append((method, url, kwargs))
+        return {"deployment_id": "DABCDEFG"}
+
+    monkeypatch.setattr(deployment.http_client, "request_json", request_json)
+    client = BotDeploymentClient("http://127.0.0.1:8686", "test-key")
+    client.create_deployment(
+        "PABCDE",
+        "http",
+        ["BABCDE"],
+        base_url="http://127.0.0.1:10001",
+    )
+
+    assert requests[0][2]["body"]["base_url"] == "http://127.0.0.1:10001"

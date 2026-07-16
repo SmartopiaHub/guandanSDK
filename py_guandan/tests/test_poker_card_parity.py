@@ -168,3 +168,9 @@ def test_should_remove_multiple_cards() -> None:
     cards.remove_cards(PokerCardList.from_string("KH").cards)
     assert len(cards) == 3
     assert cards.has_cards(PokerCardList.from_string("AS KH 3C").cards)
+
+
+def test_card_list_accepts_live_server_hand_prefixed_forms() -> None:
+    assert PokerCardList.from_string("empty-0 :").is_empty
+    cards = PokerCardList.from_string("unknown--1 : AS KH")
+    assert cards.has_cards(PokerCardList.from_string("AS KH").cards)

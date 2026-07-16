@@ -447,8 +447,46 @@ class Round:
         return self.phases[-1]
 
     @property
+    def is_complete(self) -> bool:
+        """Whether the round is completed, based on persisted round result.
+
+        Calls ``complete_round_result()`` to fill in the dwellers list from
+        the player list before validating, so this works correctly even for
+        rounds deserialized from stored data (where dwellers may be inferred
+        rather than explicitly recorded).
+        """
+        self.complete_round_result()
+        return self.round_result.is_valid_and_complete()
+
+    @property
     def has_ended(self) -> bool:
-        return is_end_of_round(self.players)
+        """Checks if the round has ended.
+
+        Returns True when either the persisted round result is valid
+        (``is_complete``) or the live card-state check indicates that at
+        most one team still holds cards.
+        """
+        return self.is_complete or is_end_of_round(self.players)
+
+    def complete_round_result(self) -> None:
+        """Fills in the dwellers list from the player list.
+
+        For a valid result the banker and follower must already be set.
+        When banker and follower are on the same team (双下), dwellers are
+        the two players on the opposite team.  Otherwise dwellers are the
+        single player who is not banker, follower, or third.
+        """
+        r = self.round_result
+        if r.banker is None or r.follower is None:
+            raise ValueError("The result should specify at least 2 players.")
+        if r.banker.team == r.follower.team:
+            if r.third is not None:
+                raise ValueError("The result should have no third when 双下.")
+            r.dwellers = [p for p in self.players if p.team != r.banker.team]
+        else:
+            if r.third is None:
+                raise ValueError("The result should specify the third player when not 双下.")
+            r.dwellers = [p for p in self.players if p.id not in (r.banker.id, r.follower.id, r.third.id)]
 
     @property
     def is_tribute_stage_completed(self) -> bool:

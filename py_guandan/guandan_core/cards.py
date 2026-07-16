@@ -556,14 +556,15 @@ class PokerCardList:
     def parse(cls, cards_str: str, level_rank: str = "2") -> "PokerCardList":
         """Parse a space-separated card string (e.g., '3H 4D 5C').
 
-        Handles the "unknown : card1 card2 ..." format used by the server
-        when the hand is not revealed (e.g., other players' hands in SSE).
+        Handles hand-prefixed forms such as ``unknown : ...`` and
+        ``empty-0 :`` that the server also uses in card-list fields.
         """
         s = (cards_str or "").strip()
         if not s:
             return cls()
-        # Strip "unknown :" prefix if present
-        if s.startswith("unknown :") or s.startswith("unknown:"):
+        # Some live-server payloads reuse Hand.toString() in fields typed as a
+        # PokerCardList. Strip the hand metadata and parse only the cards.
+        if ":" in s:
             s = s.split(":", 1)[-1].strip()
             if not s:
                 return cls()
