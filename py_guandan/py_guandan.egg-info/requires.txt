@@ -12,5 +12,8 @@ websockets>=11
 aiohttp>=3.9
 pyyaml>=6
 
+[proxy-bot]
+pyyaml>=6
+
 [websocket]
 websockets>=11

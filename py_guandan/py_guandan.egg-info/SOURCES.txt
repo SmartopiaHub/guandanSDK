@@ -10,6 +10,7 @@ guandan_benchmark/monitor.py
 guandan_benchmark/runner.py
 guandan_benchmark/tracker.py
 guandan_bot/__init__.py
+guandan_bot/_websocket.py
 guandan_bot/application.py
 guandan_bot/async_transport.py
 guandan_bot/bot.py
@@ -26,6 +27,10 @@ guandan_core/hand_validator.py
 guandan_core/message.py
 guandan_core/player.py
 guandan_core/utility.py
+proxy_bot/__init__.py
+proxy_bot/inspect_state.py
+proxy_bot/proxy_bot.py
+proxy_bot/server.py
 py_guandan/__init__.py
 py_guandan/http.py
 py_guandan.egg-info/PKG-INFO
@@ -36,7 +41,9 @@ py_guandan.egg-info/top_level.txt
 tests/test_async_transport.py
 tests/test_benchmark_cli.py
 tests/test_benchmark_client.py
+tests/test_benchmark_display.py
 tests/test_benchmark_script.py
+tests/test_benchmark_tracker.py
 tests/test_bot_sdk.py
 tests/test_dart_crosscheck.py
 tests/test_demo_cli.py
@@ -44,10 +51,13 @@ tests/test_deployment_client.py
 tests/test_find_and_canbeat_parity.py
 tests/test_game_state_parity.py
 tests/test_http_transport.py
+tests/test_inspect_state.py
 tests/test_message_parity.py
 tests/test_model_utility_parity_existing.py
 tests/test_models.py
 tests/test_player_parity.py
 tests/test_poker_card_parity.py
 tests/test_protocol.py
+tests/test_proxy_bot.py
 tests/test_python_specific.py
+tests/test_websocket_proxy.py

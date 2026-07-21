@@ -556,6 +556,8 @@ URLs and access token; `game.cancel()` cancels the game. See
 - `guandan_benchmark`: fully automated test harness with SSE monitoring, scoring, and reporting
 - `py_guandan.http`: centralized HTTP transport; loopback traffic bypasses
   system proxies while remote traffic preserves normal proxy behavior
+- `py_guandan.proxy_bot`: HTTP proxy bot with an unauthenticated agent-facing
+  API for externally controlled play, tribute, and return decisions
 
 Protocol parsing types both the transport envelope and its nested game message:
 
@@ -569,6 +571,550 @@ if (
     and isinstance(message.payload, ServerPlayHandRequest)
 ):
     print(message.payload.available_cards)
+```
+
+## Proxy Bot
+
+The `proxy_bot` module provides a Guandan bot whose decisions are supplied
+through a small unauthenticated agent-facing HTTP API. It supports multiple
+concurrent platform sessions and keeps their requests and round state isolated.
+
+Two platform transports are supported: **WebSocket** (default) and **HTTP**.
+Both expose the same agent-facing API; only the platform communication differs.
+
+### Quick start
+
+```sh
+cd py_guandan
+python3 -m venv .venv
+.venv/bin/pip install -e '.[proxy-bot,websocket]'
+
+# WebSocket transport (default)
+BOT_DEPLOYMENT_KEY=... .venv/bin/python proxy_bot_demo.py
+
+# HTTP transport
+HTTP_BOT_INVOCATION_KEY=... .venv/bin/python proxy_bot_demo.py --protocol http
+```
+
+**WebSocket protocol** (`--protocol websocket`, the default): the bot connects
+to the game-server bot gateway at `ws://127.0.0.1:9001/bot-gateway/v1` (or
+`--game-server` / `PROXY_BOT_GAME_SERVER`). Requires `--deployment-key` (or the
+`BOT_DEPLOYMENT_KEY` env var). The agent HTTP API listens on `--host`:`--port`.
+
+**HTTP protocol** (`--protocol http`): the bot starts a combined listener that
+handles both the platform-facing `guandan-bot-v1` routes and the agent-facing
+API on the same port. Requires `--invocation-key` (or the
+`HTTP_BOT_INVOCATION_KEY` env var).
+
+### Agent API
+
+Open `GET /help` for the complete API. The main routes are:
+
+- `GET /request[?session_id=...|&game_id=...]`
+- `GET /state[?session_id=...|&game_id=...]`
+- `POST /action[?session_id=...|&game_id=...]`
+- `GET /help`
+
+Public agent routes deliberately do not require authentication. Bind or
+firewall the listener accordingly.
+
+For read-only card-tracking diagnostics, `inspect_state.py` fetches only
+`GET /state` and reports the latest exact-hand observation for every other
+seat, its natural and heart-level-wildcard-assisted rank bombs,
+complete-joker-bomb availability, straight-flush windows, remaining-card
+counts, and the multiset of cards not yet seen by the proxy seat:
+
+```sh
+.venv/bin/python proxy_bot/inspect_state.py \
+  --session-id '<room-id>:<deployment-id>:<seat>'
+```
+
+Use `--game-id`, `--state-file`, or `--format json` when convenient. The
+inspector does not submit actions or recommend plays.
+
+### CLI reference
+
+```
+proxy_bot_demo.py [--protocol {websocket,http}] [--host HOST] [--port PORT]
+                  [--game-server URL] [--deployment-key KEY]
+                  [--invocation-key KEY] [--action-timeout SECONDS]
+                  [--bot-code CODE]
+```
+
+| Option | Env var | Default | Description |
+|---|---|---|---|
+| `--protocol` | `PROXY_BOT_PROTOCOL` | `websocket` | Platform transport: `websocket` or `http` |
+| `--host` | `PROXY_BOT_HOST` | `127.0.0.1` | Agent API listen address |
+| `--port` | `PROXY_BOT_PORT` | `10001` | Agent API listen port |
+| `--game-server` | `PROXY_BOT_GAME_SERVER` | `ws://127.0.0.1:9001` | WebSocket game-server URL (WebSocket only) |
+| `--deployment-key` | `BOT_DEPLOYMENT_KEY` | — | WebSocket deployment key (WebSocket only) |
+| `--invocation-key` | `HTTP_BOT_INVOCATION_KEY` | — | HTTP invocation token (HTTP only) |
+| `--action-timeout` | `PROXY_ACTION_TIMEOUT` | `600` | Max wait for an agent action (seconds) |
+| `--bot-code` | — | `proxyBot` | Bot code reported in responses |
+
+### Module structure
+
+- `proxy_bot.ProxyBotApplication`: session manager that translates
+  platform messages into pending requests and validates external actions
+- `proxy_bot.ProxyHttpServer`: combined platform-facing and
+  agent-facing HTTP server (HTTP protocol)
+- `proxy_bot.ProxyWebSocketBot`: WebSocket gateway client with
+  concurrent agent HTTP API (WebSocket protocol)
+- `proxy_bot.inspect_state`: read-only card-tracking diagnostics
+- `proxy_bot_demo.py`: entry-point script (run from `py_guandan/`)
+
+### Benchmark runbook: reasoning-controlled play
+
+This workflow puts the proxy deployment in seat 1 (Red), uses `strongBot` in
+seats 2, 3, and 4, and leaves every seat-1 tribute, return, and play decision
+to a human or AI agent calling the public proxy API. Seat 3 is seat 1's
+teammate. Keep three terminals open: one for the proxy console, one for the
+benchmark/SSE monitor, and one for the decision loop.
+
+The examples below are run from `py_guandan/` unless a command starts with
+`cd`. Replace values in angle brackets; never paste a developer key,
+deployment key, invocation token, or runtime access token into a result log or
+agent prompt.
+
+#### 1. Check prerequisites and reuse the local configuration
+
+Install the proxy and benchmark dependencies:
+
+```sh
+cd py_guandan
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[benchmark,proxy-bot,websocket]'
+```
+
+Run deployment and benchmark commands from `py_guandan` so they read
+`py_guandan/.env`. Reuse its `LOBBY_SERVER_URL`, `USERNAME`, `PASSWORD`, and,
+when present, `DEV_API_KEY`/`BOT_DEPLOY_API_KEY`; do not print or copy the
+file's contents into logs. The lobby and at least one game server must already
+be healthy. The lobby assigns the runtime game server, so a local
+`GAME_SERVER_URL` normally does not need to be put into the benchmark payload.
+
+A deployment needs different kinds of credentials depending on the protocol:
+
+- **WebSocket** (recommended): a deployment key that the bot presents when
+  connecting to the game-server bot gateway. Use
+  `BOT_DEPLOYMENT_KEY`/`BOT_DEPLOY_API_KEY` for registration and
+  `BOT_DEPLOYMENT_KEY` for the running bot.
+- **HTTP**: a developer API key or username/password for registration and
+  test-game creation, plus the one-time HTTP bot invocation token used by the
+  game server when it calls the platform-facing `/sessions` routes.
+
+The public `/request`, `/state`, `/action`, and `/help` routes intentionally
+have no authentication. Bind or firewall the listener accordingly.
+
+#### 2. Start and, if necessary, register the proxy
+
+**WebSocket protocol (recommended).** The bot connects to the game server
+directly. Start it with the deployment key returned at registration time:
+
+```sh
+cd py_guandan
+BOT_DEPLOYMENT_KEY='<deployment-key>' \
+PROXY_ACTION_TIMEOUT=600 \
+.venv/bin/python proxy_bot_demo.py --host 0.0.0.0 --port 10001
+```
+
+The `--game-server` defaults to `ws://127.0.0.1:9001` (the `GAME_SERVER_URL`
+from `.env`). Override with `PROXY_BOT_GAME_SERVER` or `--game-server` if the
+game server is elsewhere.
+
+**HTTP protocol.** For an existing HTTP deployment, start the proxy with the
+invocation token saved when that deployment was created:
+
+```sh
+cd py_guandan
+HTTP_BOT_INVOCATION_KEY='<http-invocation-token>' \
+PROXY_ACTION_TIMEOUT=600 \
+.venv/bin/python proxy_bot_demo.py --protocol http --host 0.0.0.0 --port 10001
+```
+
+`PROXY_ACTION_TIMEOUT` is only a local upper bound. It cannot extend the
+absolute `deadline_millis` supplied by the game server. The proxy reserves a
+small margin before that deadline.
+
+In another terminal, check the listener:
+
+```sh
+curl -fsS http://127.0.0.1:10001/health
+curl -fsS http://127.0.0.1:10001/help
+```
+
+If no deployment exists, run the registration wizard. For WebSocket, keep the
+proxy running (the deployment doesn't need a health check). For HTTP, keep the
+proxy reachable for its health check:
+
+```sh
+cd py_guandan
+.venv/bin/python deploy_bot.py
+```
+
+Choose HTTP or WebSocket transport. For HTTP, enter the externally reachable
+proxy base URL and set maximum concurrent sessions high enough for all
+simultaneous games. For WebSocket, the bot connects outbound so no base URL
+is needed. Save the reported deployment ID, deployment management key, and
+(HTTP only) invocation token; the management key and invocation token are
+shown only once. Restart the proxy with the real credentials before starting
+a game. A deployment can be reused for later benchmarks.
+
+The proxy console should show lines such as `session started`, `pending play`,
+`submitted play`, and `session ended`. Watch it throughout the run for rejected
+platform messages, action timeouts, or a session that unexpectedly ends.
+
+#### 3. Start seat 1 against three StrongBots
+
+For an ordinary run, save the following matchup as
+`py_guandan/proxy-benchmark.yaml`, then set
+`CONFIG_FILE=proxy-benchmark.yaml` in `py_guandan/.env`. `benchmark.py` obtains
+the lobby URL and credentials from the same `.env` file:
+
+```yaml
+lobby_url: http://127.0.0.1:8686
+num_rounds: 10
+total_timeout: 6000
+heartbeat_timeout: 1200
+
+bots:
+  seat_1:
+    type: deployed
+    deployment_id: <proxy-deployment-id>
+  seat_2:
+    type: builtin
+    bot_code: strongBot
+  seat_3:
+    type: builtin
+    bot_code: strongBot
+  seat_4:
+    type: builtin
+    bot_code: strongBot
+```
+
+Then start the blocking benchmark/SSE monitor in its own terminal:
+
+```sh
+cd py_guandan
+.venv/bin/python benchmark.py
+```
+
+The standard benchmark client creates a test game with a one-hour expiry. For
+a long reasoning-controlled run, such as 100 rounds, create it with the SDK so
+the expiry covers the full session:
+
+```sh
+cd py_guandan
+.venv/bin/python - '<proxy-deployment-id>' 100 <<'PY'
+import sys
+
+from benchmark import _load_dotenv
+from guandan_benchmark import GameTracker, monitor_events
+from guandan_bot import Participant, TestGame, TestGameConfig
+
+deployment_id = sys.argv[1]
+rounds = int(sys.argv[2])
+env = _load_dotenv()
+lobby_url = env.get("LOBBY_SERVER_URL", "http://127.0.0.1:8686").rstrip("/")
+api_key = env.get("DEV_API_KEY", "")
+if not api_key:
+    raise SystemExit("DEV_API_KEY is not set in py_guandan/.env")
+
+game = TestGame.start(TestGameConfig(
+    lobby_url=lobby_url,
+    api_key=api_key,
+    participants=(
+        Participant.deployed(1, deployment_id),
+        Participant.builtin(2, "strongBot"),
+        Participant.builtin(3, "strongBot"),
+        Participant.builtin(4, "strongBot"),
+    ),
+    num_rounds=rounds,
+    expires_in_seconds=24 * 60 * 60,
+))
+print(f"test_game_id={game.test_game_id}", flush=True)
+print(f"game_id={game.game_id}", flush=True)
+
+tracker = GameTracker(total_rounds=rounds)
+outcome = monitor_events(
+    events_url=game.runtime["events_url"],
+    access_token=game.runtime["access_token"],
+    timeout_s=24 * 60 * 60 - 60,
+    heartbeat_timeout=1200,
+    verbose=True,
+    tracker=tracker,
+)
+print(f"termination={outcome['termination']}", flush=True)
+print(
+    f"red_wins={tracker.red_wins} blue_wins={tracker.blue_wins} "
+    f"red_score={tracker.red_score} blue_score={tracker.blue_score}",
+    flush=True,
+)
+PY
+```
+
+Do not close this monitor just because no seat-1 request is pending: other
+players may be acting. A healthy SSE stream, proxy console, and `/request`
+poller provide three independent views of progress. Do not cancel an active
+test unless it is irrecoverably blocked.
+
+#### 4. Select the correct session when several games are active
+
+The creation response/monitor supplies `test_game_id` and `game_id`. The proxy
+console supplies the platform `session_id`, and an unfiltered request lists all
+active sessions:
+
+```sh
+curl -sS http://127.0.0.1:10001/request |
+  python3 -m json.tool
+```
+
+A session ID commonly resembles
+`<room-id>:<deployment-id>:<seat>`, but treat it as an opaque string. Copy the
+exact `session_id` whose `game_id` matches the new benchmark, then keep both in
+the decision terminal:
+
+```sh
+PROXY_URL=http://127.0.0.1:10001
+SESSION_ID='<exact-session-id>'
+GAME_ID='<game-id>'
+```
+
+Without a selector, `GET /request` and `GET /state` return a list. A `game_id`
+selector is convenient when it identifies exactly one proxy session, but it
+can be ambiguous if the same deployment occupies multiple seats. Prefer the
+canonical `session_id`. `curl --data-urlencode` safely handles the colons and
+other characters:
+
+```sh
+curl -sS --get "$PROXY_URL/request" \
+  --data-urlencode "session_id=$SESSION_ID" |
+  python3 -m json.tool
+
+curl -sS --get "$PROXY_URL/state" \
+  --data-urlencode "session_id=$SESSION_ID"
+```
+
+Always send the selector with `/action`. Omitting it is accepted only when
+exactly one request across every active game is pending, which is too fragile
+for concurrent benchmarks.
+
+#### 5. Run the decision loop
+
+Poll `/request` every 100–250 ms. A selected response has `pending: false`
+while another seat is acting. When it becomes true, record its `request_id`,
+`request`, `deadline_millis`, `payload.available_cards`, table hand, level
+rank, player counts, and game-state snapshot. `deadline_millis` is an absolute
+Unix time in milliseconds. Finish analysis and submit comfortably before it;
+researching strategy or reconstructing a bomb ladder must not cause a timeout.
+
+Use `/state` whenever more context is needed. Its YAML includes the round's
+initial and current seat-1 cards, player information, all turns observed in the
+round, the latest game-state snapshot, the pending request, and the 40 most
+recent server events. Before posting, fetch `/request` once more if substantial
+time has passed and confirm that the `request_id` is unchanged.
+
+Submit exactly one action for that pending request:
+
+```sh
+# Play one or more cards. Copy card tokens exactly, including repeated cards
+# and the '*' marker on current-level cards.
+curl -sS -X POST "$PROXY_URL/action" \
+  --url-query "session_id=$SESSION_ID" \
+  -H 'Content-Type: text/plain' \
+  --data-binary '3H 3D'
+
+# Pass a play request.
+curl -sS -X POST "$PROXY_URL/action" \
+  --url-query "session_id=$SESSION_ID" \
+  -H 'Content-Type: text/plain' \
+  --data-binary 'pass'
+
+# Tribute and return requests use the same endpoint but accept one card only.
+curl -sS -X POST "$PROXY_URL/action" \
+  --url-query "session_id=$SESSION_ID" \
+  -H 'Content-Type: text/plain' \
+  --data-binary 'RJ'
+```
+
+The pending request determines whether `/action` constructs a play, tribute,
+or return response. HTTP 200 with `accepted: true` means the proxy validator
+accepted and released that response to the game server. On HTTP 400, read the
+error, refresh the still-pending request, correct the encoding or hand, and
+resubmit before its deadline. Never silently replace a reasoning-controlled
+move with a call to `basicBot`, `strongBot`, or another automatic player.
+
+The heart card of the current level is the wildcard. It can stand for any
+non-joker rank in a legal hand (for example, it can turn three natural cards
+of one rank into a four-card bomb). Other suits of the current level are
+ordinary natural cards even though their wire tokens also carry `*`. Let the
+local validator, not a remembered variant of Guandan rules, decide legality.
+
+Two optional tools make the analysis safer without choosing an action:
+
+```sh
+# Derived card tracking: exact hands when the server has exposed them, bombs,
+# straight-flush windows, counts, and the unseen-card multiset.
+.venv/bin/python proxy_bot/inspect_state.py \
+  --base-url "$PROXY_URL" \
+  --session-id "$SESSION_ID"
+
+# Exhaustive locally validator-legal actions for the current request.
+curl -sS --get "$PROXY_URL/request" \
+  --data-urlencode "session_id=$SESSION_ID" |
+  .venv/bin/python ../scripts/legal_move_aid.py \
+    --compact --format yaml
+```
+
+Both helpers are read-only. An "exact hand" is only the latest exact
+observation derivable from proxy-visible events, and the legal-move aid lists
+candidates and neutral residual metrics; neither tool recommends or submits a
+move. The controlling agent must reason about partnership, table control,
+remaining counts, wildcard use, bombs and straight flushes, likely replies,
+and at least the next two tricks, then choose the action itself.
+
+#### 6. Append each result and reflection immediately
+
+Create `tmp/results.txt` and `tmp/reflections.md` at the start, including the
+start time, test/game/room IDs, seat configuration, target round count, and an
+initial strategy. Append rather than rewrite. After every final round-result
+event—and before accumulating several rounds in memory—append one result line
+and one reflection section. An append-safe result format is:
+
+```text
+ROUND\t25\tround_id=R25\twinner=blue\tred=-3\tblue=3\tfinish=4,2,dwellers:1+3\tcumulative_red=-22\tcumulative_blue=22
+```
+
+Use a stable reflection key so a retry cannot duplicate the same round:
+
+```markdown
+<!-- round-key: <test-game-id>|<room-id>|R25 -->
+## Round 25 — Blue double-down (`Red -3 / Blue +3`)
+
+- Finish: seat 4 first and seat 2 second; seats 1 and 3 were co-dwellers.
+- What worked: ...
+- Why we won/lost: ...
+- Lesson: ...
+- Applied adjustment: a concrete rule to use in later rounds ...
+```
+
+Obtain the result from the SSE monitor or the latest non-partial
+`iRoundResult`. Query `/state` promptly because `recent_events` is bounded:
+
+```sh
+curl -sS --get "$PROXY_URL/state" \
+  --data-urlencode "session_id=$SESSION_ID" |
+  .venv/bin/python -c '
+import json, sys, yaml
+state = yaml.safe_load(sys.stdin)
+events = [e for e in state.get("recent_events", [])
+          if e.get("type") == "iRoundResult" and not e.get("is_partial")]
+print(json.dumps(events[-1] if events else {}, ensure_ascii=False, indent=2))
+'
+```
+
+In `round_result`, `banker` is first and `follower` is second. If they are on
+the same team, the model intentionally leaves `third` unset and puts both
+losers in `dwellers`; log them as co-dwellers without inventing an order. In a
+non-double-down round, `third` is third and the single dweller is fourth. Seats
+1 and 3 are Red; seats 2 and 4 are Blue. Score each round as follows:
+
+| Winning team's places | Winning team | Losing team |
+|---|---:|---:|
+| first + second | +3 | -3 |
+| first + third | +2 | -2 |
+| first + fourth | +1 | -1 |
+
+Reflection is part of the control loop, not just a report. Before the next
+round, turn the new lesson into a specific check—for example, preserve a
+useful bomb tier, enumerate both opponents' straight-flush windows, retain a
+pair for the endgame, or simulate every adversarial response to a partner
+feed. Apply that check on later requests and state explicitly in subsequent
+reflections whether it helped. Keep the reflection factual: cite the relevant
+cards, counts, control transfer, and alternative line rather than merely
+saying that play should improve.
+
+If the next tribute/return request arrives while logging, respect its deadline:
+append the compact result first, make the decision, then finish the detailed
+reflection immediately after the action is accepted. Verify the file tails
+periodically so a crash loses at most the current round; never postpone all
+writes until completion.
+
+#### 7. Finish and report
+
+Continue through losses, tribute phases, periods with no seat-1 request, and
+recoverable validation errors until the SSE monitor reports `test.completed`
+and the requested number of final round results has been logged. At the end:
+
+1. Reconcile every result line against the monitor's per-round report.
+2. Confirm there is exactly one result and reflection key for every requested
+   round.
+3. Total Red/Blue wins, +3/+2/+1 outcomes, double-downs, and cumulative score.
+4. Summarize each round and the most useful strategic lessons, including what
+   changed after losses.
+5. Mention any timeout, server-supplied fallback, reconnect, or anomalous
+   result explicitly; do not present an auto-resolved action as the agent's
+   own decision.
+
+Useful final checks are:
+
+```sh
+rg -c '^ROUND' tmp/results.txt
+rg -c '^<!-- round-key:' tmp/reflections.md
+tail -n 5 tmp/results.txt
+```
+
+### Copy-paste prompt for a benchmark-playing AI agent
+
+```text
+Run a <NUMBER_OF_ROUNDS>-round Guandan benchmark in this repository. Reuse the
+configuration and credentials in py_guandan/.env without printing secrets.
+Use the deployed py_proxy_bot at seat 1, and built-in strongBot at seats 2, 3,
+and 4. If the proxy deployment already exists, reuse it; otherwise deploy it
+as an HTTP bot, capture its deployment ID and invocation token securely, and
+start it. Keep the proxy console and the benchmark SSE monitor running. For a
+long manual benchmark, set a test-game expiry and monitor timeout sufficient
+for the whole run.
+
+Discover the new game_id and canonical proxy session_id, because the proxy can
+serve multiple games concurrently. Always select this session explicitly in
+/request, /state, and /action calls. Poll /request continuously. Whenever a
+play, tribute, or return request is pending, inspect /state as needed, reason
+about the move yourself at full strength, confirm the request_id has not
+changed, and submit the chosen string-encoded action through /action before
+deadline_millis. Copy exact card tokens, including duplicates and level-card
+markers. Remember that the heart of the current level is a wildcard usable as
+any non-joker card; include wildcard-assisted bombs and straight flushes in
+both our plans and opponent threat analysis.
+
+You may use proxy_bot/inspect_state.py and scripts/legal_move_aid.py as
+read-only evidence. They may derive visible card information and enumerate
+validator-legal moves, but they do not choose moves. Do not ask basicBot,
+strongBot, another bot, another model, or an auto-play fallback to decide any
+seat-1 action. Use your own reasoning for every decision. Model partnership
+with seat 3, exact and inferred opponent tails, hand partitions, the complete
+bomb/straight-flush ladder, adversarial replies, and at least the next two
+tricks. Strategy research is allowed, but it must never cause an action
+deadline to expire.
+
+At startup initialize tmp/results.txt and tmp/reflections.md with benchmark
+metadata and an initial policy. Immediately after every completed round,
+append exactly one tab-separated result to tmp/results.txt with round ID,
+winner, finish/co-dwellers, Red and Blue points, and cumulative score. Append a
+uniquely keyed section to tmp/reflections.md explaining what worked, why we
+won or lost, the decisive alternative, the lesson, and a concrete adjustment.
+Read and apply the accumulated adjustments to every remaining round. Never
+hold several rounds only in memory or rewrite earlier entries.
+
+Use final non-partial iRoundResult/SSE data for scoring. Seats 1+3 are Red and
+2+4 are Blue; first+second scores +/-3, first+third +/-2, and first+fourth
++/-1. A same-team first/second result has two unordered co-dwellers in the
+dwellers list; do not invent third/fourth places. Keep working through all
+rounds, monitor and diagnose recoverable errors, and do not stop merely because
+a round is lost or no request is currently pending. Once test.completed is
+received and all rows are reconciled, report every round plus aggregate wins,
+losses, points, double-downs, anomalies, and the strategic lessons that most
+affected later play.
 ```
 
 ## Developer API key management

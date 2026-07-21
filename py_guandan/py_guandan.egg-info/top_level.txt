@@ -1,4 +1,5 @@
 guandan_benchmark
 guandan_bot
 guandan_core
+proxy_bot
 py_guandan

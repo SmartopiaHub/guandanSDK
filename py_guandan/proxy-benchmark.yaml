@@ -1,0 +1,18 @@
+lobby_url: http://127.0.0.1:8686
+num_rounds: 1
+total_timeout: 6000
+heartbeat_timeout: 1200
+
+bots:
+  seat_1:
+    type: deployed
+    deployment_id: D384CFL9
+  seat_2:
+    type: builtin
+    bot_code: strongBot
+  seat_3:
+    type: builtin
+    bot_code: strongBot
+  seat_4:
+    type: builtin
+    bot_code: strongBot
