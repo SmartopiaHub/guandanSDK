@@ -1,5 +1,3 @@
-
-
 /// Configuration for per-action time limits during a game.
 ///
 /// Each limit is specified in seconds. A `null` value means no limit for that
@@ -22,31 +20,54 @@ class TimingConfig {
   final int? _openingTimeLimit;
 
   /// Maximum time allowed per play turn, or `null` if unlimited.
-  Duration? get playTimeLimit => _playTimeLimit == null ? null : Duration(seconds: _playTimeLimit);
+  Duration? get playTimeLimit =>
+      _playTimeLimit == null ? null : Duration(seconds: _playTimeLimit);
+
   /// Maximum time allowed to pay tribute, or `null` if unlimited.
-  Duration? get tributeTimeLimit => _tributeTimeLimit == null ? null : Duration(seconds: _tributeTimeLimit);
+  Duration? get tributeTimeLimit =>
+      _tributeTimeLimit == null ? null : Duration(seconds: _tributeTimeLimit);
+
   /// Maximum time allowed to return a tribute card, or `null` if unlimited.
-  Duration? get returnTimeLimit => _returnTimeLimit == null ? null : Duration(seconds: _returnTimeLimit);
+  Duration? get returnTimeLimit =>
+      _returnTimeLimit == null ? null : Duration(seconds: _returnTimeLimit);
+
   /// Maximum time allowed to sort cards at round start, or `null` if unlimited.
-  Duration? get sortTimeLimit => _sortTimeLimit == null ? null : Duration(seconds: _sortTimeLimit);
+  Duration? get sortTimeLimit =>
+      _sortTimeLimit == null ? null : Duration(seconds: _sortTimeLimit);
+
   /// Maximum time for the opening phase, or `null` if unlimited.
-  Duration? get openingTimeLimit => _openingTimeLimit == null ? null : Duration(seconds: _openingTimeLimit);
+  Duration? get openingTimeLimit =>
+      _openingTimeLimit == null ? null : Duration(seconds: _openingTimeLimit);
+
   /// Delay before an automatically delegated bot acts, or `null` to use the
   /// default (4 s).
-  Duration? get delegatedActionDelay => _delegatedActionDelay == null ? null : Duration(seconds: _delegatedActionDelay);
+  Duration? get delegatedActionDelay => _delegatedActionDelay == null
+      ? null
+      : Duration(seconds: _delegatedActionDelay);
 
   /// Whether any time limit is configured.
-  bool get isTimed => _playTimeLimit != null || tributeTimeLimit != null || returnTimeLimit != null || sortTimeLimit != null || _openingTimeLimit != null;
+  bool get isTimed =>
+      _playTimeLimit != null ||
+      tributeTimeLimit != null ||
+      returnTimeLimit != null ||
+      sortTimeLimit != null ||
+      _openingTimeLimit != null;
 
   /// Creates a [TimingConfig] with optional limits in seconds.
   /// [delegatedActionDelay] defaults to 4 seconds.
-  TimingConfig({int? playTimeLimit, int? tributeTimeLimit, int? returnTimeLimit, int? sortTimeLimit, int? openingTimeLimit, int? delegatedActionDelay}):
-    _playTimeLimit = playTimeLimit,
-    _tributeTimeLimit = tributeTimeLimit,
-    _returnTimeLimit = returnTimeLimit,
-    _sortTimeLimit = sortTimeLimit,
-    _delegatedActionDelay = delegatedActionDelay ?? 4,
-    _openingTimeLimit = openingTimeLimit;
+  TimingConfig(
+      {int? playTimeLimit,
+      int? tributeTimeLimit,
+      int? returnTimeLimit,
+      int? sortTimeLimit,
+      int? openingTimeLimit,
+      int? delegatedActionDelay})
+      : _playTimeLimit = playTimeLimit,
+        _tributeTimeLimit = tributeTimeLimit,
+        _returnTimeLimit = returnTimeLimit,
+        _sortTimeLimit = sortTimeLimit,
+        _delegatedActionDelay = delegatedActionDelay ?? 4,
+        _openingTimeLimit = openingTimeLimit;
 
   /// Deserializes a [TimingConfig] from a JSON map.
   TimingConfig.fromJson(Map<String, dynamic> json)
@@ -89,28 +110,34 @@ class TimingConfig {
   }
 }
 
-
 /// Predefined timing presets for game rooms.
-enum PresetTimingMode{
+enum PresetTimingMode {
   /// Short action limits (30 s play, 60 s tribute, 90 s return, 120 s opening).
   fastPaced,
+
   /// Generous limits (99 s for all timed actions).
   relaxed,
+
   /// No time limits at all.
   noLimit,
 }
 
 /// Creates a [TimingConfig] from a [PresetTimingMode].
-TimingConfig createPresetTimingConfig(PresetTimingMode timingMode){
-    switch(timingMode){
-      case PresetTimingMode.noLimit:
-        return TimingConfig();
-      case PresetTimingMode.fastPaced:
-        return TimingConfig(playTimeLimit: 30, tributeTimeLimit: 60, returnTimeLimit: 90, openingTimeLimit: 120);
-      case PresetTimingMode.relaxed:
-        return TimingConfig(playTimeLimit: 99, tributeTimeLimit: 99, returnTimeLimit: 99);
-    }
+TimingConfig createPresetTimingConfig(PresetTimingMode timingMode) {
+  switch (timingMode) {
+    case PresetTimingMode.noLimit:
+      return TimingConfig();
+    case PresetTimingMode.fastPaced:
+      return TimingConfig(
+          playTimeLimit: 30,
+          tributeTimeLimit: 60,
+          returnTimeLimit: 90,
+          openingTimeLimit: 120);
+    case PresetTimingMode.relaxed:
+      return TimingConfig(
+          playTimeLimit: 99, tributeTimeLimit: 99, returnTimeLimit: 99);
   }
+}
 
 /// Controls when bot model metadata and avatars are exposed to clients.
 ///
@@ -152,8 +179,7 @@ enum ExposeBotCode {
 ///
 /// Includes player count, tribute/ace-passing settings, timing, and
 /// privacy/social flags for bot nicknames and player-leave broadcasts.
-class GameRoomConfig{
-
+class GameRoomConfig {
   /// Maximum number of players allowed in the room. Currently must be 4.
   final int requiredPlayers;
 
@@ -200,23 +226,23 @@ class GameRoomConfig{
   /// Whether extra time (60 s once per player) is allowed.
   final bool allowExtraTime;
 
-  static final TimingConfig _defaultTimingConfig = createPresetTimingConfig(PresetTimingMode.relaxed);
+  static final TimingConfig _defaultTimingConfig =
+      createPresetTimingConfig(PresetTimingMode.relaxed);
 
   TimingConfig get timingConfig => _timingConfig ?? _defaultTimingConfig;
-  set timingConfig(TimingConfig? timingConfig){
+  set timingConfig(TimingConfig? timingConfig) {
     _timingConfig = timingConfig;
   }
 
   /// Extra time granted once per player (e.g., 60 s), or `null` if not allowed.
   Duration? get extraTime => allowExtraTime ? TimingConfig.extraTime : null;
 
-  
-
   Duration? get playTimeLimit => timingConfig.playTimeLimit;
   Duration? get tributeTimeLimit => timingConfig.tributeTimeLimit;
   Duration? get returnTimeLimit => timingConfig.returnTimeLimit;
   Duration? get sortTimeLimit => timingConfig.sortTimeLimit;
   Duration? get openingTimeLimit => timingConfig.openingTimeLimit;
+
   /// Delay before an automatically delegated bot begins its action.
   Duration? get delegatedActionDelay => timingConfig.delegatedActionDelay;
 
@@ -227,15 +253,22 @@ class GameRoomConfig{
   /// [acePassingEnabled] indicates whether 过尖 feature is enabled.
   /// [timingConfig] allows for custom timing configurations, overriding the default based on [timingMode].
   /// [roomTier] specifies the room level, defaulting to 0 if not provided.
-  GameRoomConfig({required this.requiredPlayers, this.acePassingEnabled=true, this.roomTier=0,
-    this.tributeEnabled=true, this.bankerFirstWhenNoTribute=true, this.allowExtraTime=true,
-     this.password, TimingConfig? timingConfig,
-     this.useBotNicknames = true, this.exposeBotCode = ExposeBotCode.alwaysExpose, this.broadcastPlayerLeave = false,
-     this.botDelay = 0}):
-    _timingConfig = timingConfig;
+  GameRoomConfig(
+      {required this.requiredPlayers,
+      this.acePassingEnabled = true,
+      this.roomTier = 0,
+      this.tributeEnabled = true,
+      this.bankerFirstWhenNoTribute = true,
+      this.allowExtraTime = true,
+      this.password,
+      TimingConfig? timingConfig,
+      this.useBotNicknames = true,
+      this.exposeBotCode = ExposeBotCode.alwaysExpose,
+      this.broadcastPlayerLeave = false,
+      this.botDelay = 0})
+      : _timingConfig = timingConfig;
 
-
-  factory GameRoomConfig.fourPlayers()  {
+  factory GameRoomConfig.fourPlayers() {
     return GameRoomConfig(requiredPlayers: 4);
   }
 
@@ -245,13 +278,18 @@ class GameRoomConfig{
         acePassingEnabled = json['ace_plus_enabled'] as bool? ?? true,
         tributeEnabled = json['tribute_enabled'] as bool? ?? true,
         allowExtraTime = json['allow_extra_time'] as bool? ?? true,
-        bankerFirstWhenNoTribute = json['banker_first_when_no_tribute'] as bool? ?? true,
+        bankerFirstWhenNoTribute =
+            json['banker_first_when_no_tribute'] as bool? ?? true,
         password = json['password'] as String?,
         useBotNicknames = json['use_bot_nicknames'] as bool? ?? true,
         exposeBotCode = ExposeBotCode.parse(json['expose_bot_code']),
         broadcastPlayerLeave = json['broadcast_player_leave'] as bool? ?? false,
-        botDelay = json['bot_delay'] as int? ?? 0;
-
+        botDelay = json['bot_delay'] as int? ?? 0,
+        _timingConfig = json['timing_config'] is Map
+            ? TimingConfig.fromJson(
+                Map<String, dynamic>.from(json['timing_config'] as Map),
+              )
+            : null;
 
   /// Creates a copy with the given fields replaced.
   GameRoomConfig copyWith({
@@ -271,7 +309,8 @@ class GameRoomConfig{
     return GameRoomConfig(
       requiredPlayers: requiredPlayers ?? this.requiredPlayers,
       tributeEnabled: tributeEnabled ?? this.tributeEnabled,
-      bankerFirstWhenNoTribute: bankerFirstWhenNoTribute ?? this.bankerFirstWhenNoTribute,
+      bankerFirstWhenNoTribute:
+          bankerFirstWhenNoTribute ?? this.bankerFirstWhenNoTribute,
       roomTier: roomTier ?? this.roomTier,
       acePassingEnabled: acePassingEnabled ?? this.acePassingEnabled,
       password: password ?? this.password,
@@ -298,6 +337,7 @@ class GameRoomConfig{
       'expose_bot_code': exposeBotCode.name,
       'broadcast_player_leave': broadcastPlayerLeave,
       'bot_delay': botDelay,
+      'timing_config': _timingConfig?.toJson(),
     };
   }
 }
@@ -310,15 +350,20 @@ class GameRoomConfig{
 class RoomMetadata {
   /// The room's unique identifier (runtime room ID).
   final String roomId;
+
   /// The human-readable room code/number, used for sharing and display.
   final String? roomCode;
+
   /// The player ID of the room creator.
   final String creatorId;
+
   /// When the room was created.
   final DateTime creationTime;
+
   /// The current room owner's player ID. May differ from [creatorId] if
   /// ownership was transferred.
   String? ownerId;
+
   /// The room's gameplay configuration.
   late final GameRoomConfig config;
 
@@ -327,7 +372,7 @@ class RoomMetadata {
 
   /// Creates room metadata. If no [config] is given, defaults to a 4-player room.
   RoomMetadata(this.roomId, this.creatorId, this.creationTime, this.ownerId,
-    {this.roomCode, GameRoomConfig? config})
+      {this.roomCode, GameRoomConfig? config})
       : config = config ?? GameRoomConfig.fourPlayers();
 
   /// Deserializes [RoomMetadata] from a JSON map.
@@ -337,7 +382,8 @@ class RoomMetadata {
         creatorId = json['creator_id'] as String,
         creationTime = DateTime.parse(json['creation_time'] as String),
         ownerId = json['room_owner_id'] as String?,
-        config = GameRoomConfig.fromJson(json['config'] as Map<String, dynamic>);
+        config =
+            GameRoomConfig.fromJson(json['config'] as Map<String, dynamic>);
 
   /// Creates a copy with the given fields replaced.
   RoomMetadata copyWith({

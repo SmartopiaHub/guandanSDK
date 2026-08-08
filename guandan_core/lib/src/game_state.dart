@@ -979,7 +979,7 @@ class Round {
 
   /// Checks if the round has ended.
   bool get hasEnded {
-    return isComplete || isEndOfRound(players);
+    return isComplete;
   }
 
   /// The ID of the next turn to be played in this round, or `null` if the

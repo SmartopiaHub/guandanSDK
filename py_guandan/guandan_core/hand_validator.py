@@ -156,6 +156,13 @@ def _detect_strict(cards: list[Card]) -> Optional[tuple[HandType, int]]:
 
     # Multiple ranks
     if n == 5:
+        # Straight flush is a bomb and must be detected before the ordinary
+        # straight interpretation of the same five physical cards.  The Dart
+        # server's deduction order is bomb -> straight flush -> straight.
+        result = _check_straight_flush_strict(cards)
+        if result:
+            return result
+
         # Check full house: triple + pair
         result = _check_full_house(rank_counts, by_rank)
         if result:
@@ -163,11 +170,6 @@ def _detect_strict(cards: list[Card]) -> Optional[tuple[HandType, int]]:
 
         # Check straight: 5 consecutive ranks, no jokers
         result = _check_straight_strict(cards)
-        if result:
-            return result
-
-        # Check straight flush: 5 consecutive same suit → bomb
-        result = _check_straight_flush_strict(cards)
         if result:
             return result
 
@@ -294,6 +296,13 @@ def _detect_with_wilds(
     total = len(normal) + len(wilds)
     n_wilds = len(wilds)
 
+    # A heart-level wild may represent only a non-joker rank.  In particular,
+    # it cannot turn a lone BJ/RJ into a pair (or complete any larger hand that
+    # contains a joker).  Keep this gate ahead of the generic pair/triple
+    # completion logic so local validation agrees with the Dart game server.
+    if any(card.is_joker for card in normal):
+        return None
+
     # Group normal cards by rank
     by_rank: dict[str, list[Card]] = {}
     for c in normal:
@@ -356,6 +365,24 @@ def _detect_5_with_wilds(
     n_wilds: int,
 ) -> Optional[tuple[HandType, int]]:
     """Detect 5-card hand with wild cards."""
+    # A heart-level wild can complete a hearts straight flush.  Classify this
+    # before the ordinary straight, matching the authoritative Dart server.
+    # The wild retains its heart suit, so it cannot complete a flush in a
+    # different suit.
+    if normal and all(card.suit == "H" for card in normal):
+        normal_ranks = [card.rank for card in normal]
+        if len(set(normal_ranks)) == len(normal_ranks):
+            wanted = set(normal_ranks)
+            for start_idx in range(len(_STRAIGHT_RANKS) - 5 + 1):
+                window = _STRAIGHT_RANKS[start_idx:start_idx + 5]
+                if len(set(window)) != 5 or not wanted.issubset(set(window)):
+                    continue
+                if 5 - len(wanted) != n_wilds:
+                    continue
+                start_rank = _STRAIGHT_RANKS[start_idx]
+                minor = 1 if start_rank == "A" else rank_power(start_rank)
+                return HandType.BOMB, 6 * 100 + minor
+
     # Try full house: triple + pair
     rank_counts = sorted(
         [(r, len(g)) for r, g in by_rank.items()],
@@ -488,10 +515,13 @@ def _detect_6_with_wilds(
 def _bomb_power(size: int, rank_power_val: int) -> int:
     """Compute bomb power as major×100 + minor.
 
-    major = size (4 for 4-card, 5 for 5-card, etc.)
-    Straight flush uses major=6 (handled separately).
+    This mirrors Dart ``getBombPower``: rank bombs of four/five cards use
+    their physical size, while rank bombs larger than five use ``size + 1``.
+    Major 6 is reserved for a five-card straight flush (handled separately),
+    so a six-of-a-kind starts at major 7 and beats every straight flush.
     """
-    return size * 100 + rank_power_val
+    major = size if size <= 5 else size + 1
+    return major * 100 + rank_power_val
 
 
 def _is_joker_bomb(cards: list[Card]) -> bool:
@@ -588,12 +618,24 @@ def validate_play(
         else:
             return False, f"Bomb power {power} does not beat bomb power {hand_on_table.power}"
 
-    # Cross-type: plate ↔ tube
-    if hand_on_table.type in (HandType.TUBE, HandType.PLATE) and hand_type in (HandType.TUBE, HandType.PLATE):
-        if power > hand_on_table.power:
+    # A six-card plate and tube are not generally interchangeable.  The Dart
+    # game server accepts a cross-type response only when the *same physical
+    # cards* can also be interpreted as the table type (possible with wild
+    # cards).  Checking only the detected plate/tube power admits ordinary
+    # plates such as KKKAAA over an unrelated tube and strands the turn after
+    # the authoritative server rejects it.
+    if hand_on_table.type == HandType.TUBE and hand_type == HandType.PLATE:
+        from .utility import check_tube
+
+        as_tube = check_tube(PokerCardList.from_list(cards))
+        if as_tube.valid and as_tube.power > hand_on_table.power:
             return True, ""
-        else:
-            return False, f"Cross-type power {power} does not beat {hand_on_table.power}"
+    elif hand_on_table.type == HandType.PLATE and hand_type == HandType.TUBE:
+        from .utility import check_plate
+
+        as_plate = check_plate(PokerCardList.from_list(cards))
+        if as_plate.valid and as_plate.power > hand_on_table.power:
+            return True, ""
 
     # Bomb beats non-bomb (already handled above), but non-bomb can't beat bomb
     if hand_on_table.is_bomb and hand_type != HandType.BOMB:

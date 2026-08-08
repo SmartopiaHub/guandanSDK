@@ -386,7 +386,9 @@ def create_test_game(
         "options": {
             "auto_start": True,
             "record_replay": True,
-            "expires_in_seconds": 3600,
+            # Thinking-enabled LLM turns can be intentionally long. Keep the
+            # logical test room alive for the full benchmark monitor window.
+            "expires_in_seconds": 86400,
             "num_rounds": num_rounds,
             "num_series": num_series,
         },

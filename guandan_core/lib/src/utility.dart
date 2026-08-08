@@ -1242,14 +1242,14 @@ bool canPlay(PokerCardList handOrCardsToPlay, Hand handOnTable, {bool allowEmpty
 /// - For a plate, the rank is the rank of the first triple.
 /// - For a straight (including straight flush), the rank is the rank of first card.
 /// - For a bomb, the rank is the rank of the bomb.
-CardRank? rankOfHand(Hand hand, CardRank levelRank, {int numberOfDecks=2}){
+CardRank? rankOfHand(Hand hand, CardRank levelRank, {int deckCount=2}){
   if (hand.type == HandType.single || hand.type == HandType.pair || hand.type == HandType.triple ||
     hand.type == HandType.fullHouse || hand.type == HandType.tube || hand.type == HandType.plate){
     return hand.power == CardRank.rankValueOfLevelCard ? levelRank : CardRank.fromValue(hand.power);
   }
 
   if (hand.type == HandType.bomb){
-    if (hand.power == getJokerBombPower(numberOfDecks)){
+    if (hand.power == getJokerBombPower(deckCount)){
       return CardRank.blackJoker;
     }
     if (hand.cards.length == 5){
