@@ -334,6 +334,26 @@ void main() {
       final straights = findStraights(cards, CardRank.two);
       expect(straights.length, 1);
     });
+
+    test('straight flush excluded by default', () {
+      final cards = c('AH 2H 3H 4H 5H  9D KS');
+      final straights = findStraights(cards, CardRank.two);
+      expect(straights, isEmpty);
+    });
+
+    test('straight flush with wild card excluded by default', () {
+      final cards = c('AH 2H 4H 5H KH*');
+      final straights = findStraights(cards, CardRank.two);
+      expect(straights, isEmpty);
+    });
+
+    test('straight flush included when excludeStraightFlush=false', () {
+      final cards = c('AH 2H 3H 4H 5H  9D KS');
+      final straights = findStraights(cards, CardRank.two,
+          excludeStraightFlush: false);
+      expect(straights.length, 1);
+      expect(straights[0].type, HandType.bomb);
+    });
   });
 
   // ==========================================================================

@@ -238,7 +238,8 @@ List<Hand> findPlates(PokerCardList cards, CardRank levelRank, {bool findAll = f
 /// This function finds all possible straights (or the first one if `findAll` is false) in a list of poker cards.
 /// If [targetPower] is provided, only straights with power rank higher than [targetPower] are considered.
 /// If [findAll] is false, only the straight with the lowest power rank that meets the criteria is returned.
-List<Hand> findStraights(PokerCardList cards, CardRank levelRank, {bool findAll = false, int? targetPower}) {
+/// If [excludeStraightFlush] is true (default), straights that also form a straight flush (a bomb) are not returned.
+List<Hand> findStraights(PokerCardList cards, CardRank levelRank, {bool findAll = false, int? targetPower, bool excludeStraightFlush = true}) {
   final resolvedTargetPower = targetPower ?? -1;
   List<Hand> straights = [];
   var regularCards = extractRegularCards(cards);
@@ -247,7 +248,11 @@ List<Hand> findStraights(PokerCardList cards, CardRank levelRank, {bool findAll 
     if (startRankValue <= resolvedTargetPower) continue; // ensure the straight is stronger than the target hand
     SeriesResult result = findSeries(regularCards, startRankValue, 5, wildCardsAvailable, 1);
     if (result.isValid) {
-      straights.add(result.toHand(levelRank));
+      var hand = result.toHand(levelRank);
+      if (excludeStraightFlush && checkStraightFlush(hand).valid) {
+        continue; // straight flush is a bomb, not a straight
+      }
+      straights.add(hand);
     }
     if (!findAll && straights.isNotEmpty) {
       return [straights.first];
