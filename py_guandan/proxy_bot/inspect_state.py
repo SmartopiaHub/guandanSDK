@@ -17,7 +17,6 @@ import sys
 from collections import Counter
 from typing import Any, Iterable
 from urllib.parse import urlencode
-from urllib.request import ProxyHandler, build_opener
 
 import yaml
 
@@ -29,6 +28,7 @@ from guandan_core.cards import (
     RANK_VALUES,
 )
 from guandan_core.utility import find_bombs, find_straight_flushes
+from py_guandan.http import HttpTransportError, http_client
 
 
 # ---------------------------------------------------------------------------
@@ -676,9 +676,14 @@ def _fetch_state(
     url = f"{base_url.rstrip('/')}/state"
     if query:
         url += "?" + urlencode(query)
-    opener = build_opener(ProxyHandler({}))
-    with opener.open(url, timeout=timeout) as response:  # noqa: S310
-        return yaml.safe_load(response)
+    # Centralized transport (proxy-free for loopback destinations like the
+    # default 127.0.0.1:10001, mirroring the previous ProxyHandler({}) opener).
+    response = http_client.require_success(
+        http_client.request("GET", url, timeout=timeout),
+        method="GET",
+        url=url,
+    )
+    return yaml.safe_load(response.text)
 
 
 # ---------------------------------------------------------------------------
@@ -723,7 +728,13 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(states, list)
             else inspect_state(states)
         )
-    except (OSError, ValueError, TypeError, yaml.YAMLError) as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        yaml.YAMLError,
+        HttpTransportError,
+    ) as exc:
         print(f"inspect_state: {exc}", file=sys.stderr)
         return 2
 

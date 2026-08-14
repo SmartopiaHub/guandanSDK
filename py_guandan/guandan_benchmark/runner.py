@@ -16,7 +16,7 @@ import warnings
 from .client import (
     check_game_server_reachable,
     check_lobby_reachable,
-    create_test_game,
+    create_benchmark,
     discover_deployments,
     build_participants,
     log,
@@ -131,18 +131,21 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     # ------------------------------------------------------------------
-    # Create test game
+    # Create benchmark (lobby provisions the test game + runs the monitor)
     # ------------------------------------------------------------------
     log("INFO", f"Test configuration: {num_rounds} round(s)")
-    game = create_test_game(
+    game = create_benchmark(
         lobby_url=config["lobby_url"],
         api_key=config["api_key"],
         participants=participants,
         num_rounds=num_rounds,
+        name=config.get("name", ""),
+        total_timeout=timeout_s,
+        heartbeat_timeout=config["heartbeat_timeout"],
     )
 
     if game is None:
-        errors.append("Test game creation failed. Check lobby server and API key.")
+        errors.append("Benchmark creation failed. Check lobby server and API key.")
         print_report(config, participants, None, None, warnings_list, errors, None)
         return 1
 

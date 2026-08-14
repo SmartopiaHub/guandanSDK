@@ -1,6 +1,7 @@
-import json
-import threading
 import ast
+import json
+import socket
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -60,13 +61,40 @@ def test_loopback_request_bypasses_poisoned_proxy(monkeypatch) -> None:
     assert result == {"status": "ok"}
 
 
+def test_sessions_enable_tcp_nodelay() -> None:
+    """Every pooled connection must set TCP_NODELAY.
+
+    The game server writes SSE events as one small write per event.  Without
+    TCP_NODELAY the client's delayed ACKs let the server's kernel hold small
+    writes until the next write flushes them, so heartbeats arrive one
+    period late and the final event of a stream (e.g. ``test.completed``)
+    is never delivered at all — the benchmark monitor would hang.  Both
+    sessions (proxy-aware and loopback-direct) must apply the socket
+    option to every pooled connection.
+    """
+    client = GuandanHttpClient()
+    try:
+        for session in (client._normal_session, client._direct_session):
+            adapter = session.get_adapter("http://")
+            pool_kw = adapter.poolmanager.connection_pool_kw
+            options = pool_kw.get("socket_options")
+            assert options is not None, f"no socket_options in pool for {session}"
+            assert (socket.IPPROTO_TCP, socket.TCP_NODELAY, 1) in options
+    finally:
+        client.close()
+
+
 def test_production_code_has_no_direct_http_clients() -> None:
     root = Path(__file__).resolve().parents[1]
     transport_path = root / "py_guandan" / "http.py"
     violations = []
 
     for path in root.rglob("*.py"):
-        if path == transport_path or "tests" in path.parts:
+        if (
+            path == transport_path
+            or "tests" in path.parts
+            or ".venv" in path.parts  # third-party packages, not production code
+        ):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):

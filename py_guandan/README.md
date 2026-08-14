@@ -45,7 +45,8 @@ at [zhiquguandan.com](https://www.zhiquguandan.com):
 2. Open the **Developer Center** (top-right menu → Developer Center).
 3. Navigate to **API Keys** and create a key.
 4. Select only the scopes needed: `bots:manage` and `bots:read` for deployment,
-   or `test_games:create` and `test_games:read` for benchmarks.
+   or `benchmarks:create` for benchmarks (`test_games:create` also works for
+   back-compat).
 5. Copy the generated `sk-zq-*` key immediately; its secret is shown only once.
 6. Store it as `.env` `BOT_DEPLOY_API_KEY` or `DEV_API_KEY`, or as the YAML
    `developer_api_key` used by the benchmark module. Do not commit the secret.
@@ -78,7 +79,7 @@ created = http_client.request_json(
     body={
         "name": "benchmark",
         "environment": "test",
-        "scopes": ["test_games:create", "test_games:read"],
+        "scopes": ["benchmarks:create"],
         "expires_in_days": 30,
     },
 )
@@ -248,8 +249,13 @@ of that key-cleanup choice.
 
 The `guandan_benchmark` module is a fully automated test harness that creates a
 configurable bot match-up, monitors the SSE event stream in real time, and
-reports per-round scores and win rates.  It wraps `TestGame.start()` (see below)
-with live monitoring, heartbeat tracking, and a summary report.
+reports per-round scores and win rates.  It creates the run through the
+lobby's `POST /api/benchmarks` endpoint (the same entry point as the
+**Developer Center → Benchmark (测试)** tab): the lobby provisions the test
+game, subscribes to the game server SSE stream, and persists per-round results
+plus the final summary, so script runs and UI runs share one history.  The
+module wraps that creation with live monitoring, heartbeat tracking, and a
+summary report.
 
 ### Interactive `benchmark.py` runner
 
@@ -270,8 +276,8 @@ key. If neither is available, the script logs in with `.env` `USERNAME` and
 `PASSWORD` or prompts for them, then walks through temporary-key creation and
 retention as described under [Developer API key management](#developer-api-key-management).
 
-After creating the test game, the runner checks lobby and game-server health,
-streams SSE events, prints the final report, and cancels the game during
+After creating the benchmark, the runner checks lobby and game-server health,
+streams SSE events, prints the final report, and cancels the run during
 cleanup if it did not reach a terminal state.
 
 ### Install
@@ -300,6 +306,10 @@ lobby_url: https://www.zhiquguandan.com
 num_rounds: 2
 total_timeout: 6000
 heartbeat_timeout: 1200
+
+# Optional display name for the run (shown in the Developer Center history).
+# The server defaults to "Benchmark <yyyy-MM-dd HH:mm>" when absent.
+# name: My overnight regression run
 
 bots:
   seat_1:
@@ -369,7 +379,7 @@ python -m guandan_benchmark --timeout 3600
 from guandan_benchmark import (
     GameTracker,
     load_config,
-    create_test_game,
+    create_benchmark,
     monitor_events,
     print_report,
 )
@@ -377,8 +387,9 @@ from guandan_benchmark import (
 # Load and validate config
 config = load_config("config.yaml")
 
-# Create a test game (uses the same API as TestGame.start())
-game = create_test_game(
+# Create a benchmark run (POST /api/benchmarks; the lobby owns the run and
+# persists history, shared with the Developer Center UI)
+game = create_benchmark(
     lobby_url=config["lobby_url"],
     api_key=config["api_key"],
     participants=build_participants(
@@ -484,8 +495,9 @@ total number of requested rounds.
 | `Config file not found` | `BENCHMARK_CONFIG_FILE` or `--config` points to a missing YAML file. |
 | `developer_api_key is missing` | Set `.env` `DEV_API_KEY`, add `developer_api_key` to YAML, or provide `.env` `USERNAME` and `PASSWORD` so the interactive runner can create a temporary key. |
 | `bots: missing seat(s): seat_2, seat_4` | Configure every seat from 1 through 4. |
-| `Test game creation failed: HTTP 401` | The developer API key is invalid, expired, or lacks the required test-game scopes. |
-| `Test game creation failed: HTTP 503` | No healthy game server is registered with the lobby. |
+| `Benchmark creation failed: HTTP 401` | The developer API key is invalid, expired, or lacks the `benchmarks:create` scope (or `test_games:create`). |
+| `Benchmark creation failed: HTTP 503` | No healthy game server is registered with the lobby. |
+| `Benchmark creation failed: HTTP 409` | `benchmark_limit_reached`: a non-admin owner may run at most one benchmark at a time; wait for the running one or ask a site admin. |
 | `SSE connection failed` | The game server is unreachable; inspect the returned `events_url` and server health. |
 | `heartbeat timeout` | The game server stopped sending events; check its health or increase `heartbeat_timeout`. |
 | `Game did not complete within Ns` | Increase `total_timeout` or reduce `num_rounds`. |
@@ -516,7 +528,15 @@ definition—and a provider if the demo had to create one—remain registered.
 
 ## Start an automated game
 
-`TestGame.start()` uses the same lobby API and payload as the benchmark:
+`TestGame.start()` drives the lobby's test-game API directly
+(`POST /api/v1/test-games`) — the low-level path for existing CI pipelines.
+For new integrations, prefer `create_benchmark()` / `POST /api/benchmarks`
+(see [Configuration](#configuration)): the lobby owns the run lifecycle and
+persists results into the shared benchmark history shown in the Developer
+Center. The direct API remains supported for pipelines that already call it,
+and for runs needing a custom `expires_in_seconds` (the benchmark API fixes
+it at 24 hours — see the
+[reasoning-controlled runbook](#benchmark-runbook-reasoning-controlled-play)):
 
 ```python
 from guandan_bot import Participant, TestGame, TestGameConfig
@@ -799,9 +819,10 @@ cd py_guandan
 .venv/bin/python benchmark.py
 ```
 
-The standard benchmark client creates a test game with a one-hour expiry. For
-a long reasoning-controlled run, such as 100 rounds, create it with the SDK so
-the expiry covers the full session:
+The standard benchmark client creates a run whose test game expires after
+24 hours (the benchmark API fixes `expires_in_seconds: 86400`). For a long
+reasoning-controlled run, such as 100 rounds, create it with the SDK so the
+expiry covers the full session:
 
 ```sh
 cd py_guandan
@@ -1132,7 +1153,7 @@ token, and a test game's runtime access token.
 2. **Create a scoped key.** Send the human access token to
    `POST /api/v1/developer/keys`, choosing only the scopes needed by the task.
    `deploy_bot.py` requests `bots:manage` and `bots:read`; `benchmark.py`
-   requests `test_games:create` and `test_games:read`; `demo.py` requests all
+   requests `benchmarks:create`; `demo.py` requests all
    four because it deploys a bot and starts a test game.
 3. **Capture the secret once.** Creation returns a `key_id` and a full
    `sk-zq-*` API key. The lobby stores a hash and never returns the secret from
@@ -1168,7 +1189,7 @@ directory.
 | Script | Credential input and prompts | Key created | End-of-run behavior |
 |---|---|---|---|
 | `deploy_bot.py` | Prefers `.env` `BOT_DEPLOY_API_KEY`, then `DEV_API_KEY`; otherwise uses `.env` `USERNAME`/`PASSWORD` or prompts | `bots:manage`, `bots:read` | Offers to save as `BOT_DEPLOY_API_KEY`. If not saved, asks whether to hard-delete it and defaults to deletion after 10 seconds. Existing keys are never deleted. |
-| `benchmark.py` | Prefers `.env` `DEV_API_KEY`, then the configured YAML key; otherwise uses `.env` `USERNAME`/`PASSWORD` or prompts | `test_games:create`, `test_games:read` | Offers to save as `DEV_API_KEY`. If not saved, asks whether to hard-delete it and defaults to deletion after 10 seconds. It also cancels an unfinished test game. Existing keys are never deleted. |
+| `benchmark.py` | Prefers `.env` `DEV_API_KEY`, then the configured YAML key; otherwise uses `.env` `USERNAME`/`PASSWORD` or prompts | `benchmarks:create` | Offers to save as `DEV_API_KEY`. If not saved, asks whether to hard-delete it and defaults to deletion after 10 seconds. It also cancels an unfinished benchmark run. Existing keys are never deleted. |
 | `demo.py` | Uses `.env` `LOBBY_SERVER_URL`, `USERNAME`, `PASSWORD`, and `GAME_SERVER_URL`, prompting for missing lobby/login values. A process `GAME_SERVER_URL` overrides `.env`. | All four bot and test-game scopes | Always hard-deletes its temporary key, closes the WebSocket bot, deletes its temporary deployment, and cancels an unfinished game. A provider created by the demo and its newly created bot definition are left registered. |
 
 For `deploy_bot.py` and `benchmark.py`, accepting the save prompt makes the key

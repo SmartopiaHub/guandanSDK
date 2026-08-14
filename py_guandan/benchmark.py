@@ -39,7 +39,7 @@ from guandan_benchmark import (
     build_participants,
     check_game_server_reachable,
     check_lobby_reachable,
-    create_test_game,
+    create_benchmark,
     discover_deployments,
     monitor_events,
     print_report,
@@ -311,7 +311,7 @@ def _prompt_api_key_workflow(
                 f" {datetime.now().astimezone().isoformat(timespec='seconds')}"
             ),
             "environment": "test",
-            "scopes": ["test_games:create", "test_games:read"],
+            "scopes": ["benchmarks:create"],
         },
     )
     api_key_val: str = key["api_key"]
@@ -377,6 +377,7 @@ def main() -> int:
         bot_configs: dict[int, dict] = cfg["bot_configs"]
         cfg_lobby_url: str = cfg["lobby_url"]
         cfg_api_key: str = cfg["api_key"]
+        config_name: str = cfg.get("name", "")
         log("Config loaded", f"{num_rounds} rounds, lobby={cfg_lobby_url}")
     else:
         _print_defaults()
@@ -389,6 +390,7 @@ def main() -> int:
         bot_configs = DEFAULT_BOT_CONFIGS
         cfg_lobby_url = ""
         cfg_api_key = ""
+        config_name = ""
 
     # ------------------------------------------------------------------
     # Resolve credentials
@@ -485,22 +487,29 @@ def main() -> int:
         current_step += 1
 
         # ------------------------------------------------------------------
-        # Create test game
+        # Create benchmark (lobby provisions the test game + runs the monitor)
         # ------------------------------------------------------------------
-        step(current_step, "Create test game")
-        game = create_test_game(
+        step(current_step, "Create benchmark")
+        game = create_benchmark(
             lobby_url=lobby_url,
             api_key=api_key,
             participants=participants,
             num_rounds=num_rounds,
+            name=config_name,
+            total_timeout=total_timeout,
+            heartbeat_timeout=heartbeat_timeout,
         )
         if game is None:
-            raise RuntimeError("Test game creation failed")
+            raise RuntimeError("Benchmark creation failed")
 
         runtime = game["runtime"]
         cancel_url = runtime.get("cancel_url", "")
         game_token = runtime.get("access_token", "")
-        log("Test game created", game["test_game_id"], colour=Colour.GREEN)
+        log(
+            "Benchmark created",
+            f"{game.get('benchmark_id')} — {game.get('benchmark_name', '')}",
+            colour=Colour.GREEN,
+        )
         log_value("Game ID", game["game_id"])
         log_value("Runtime server", runtime.get("runtime_server_id", "?"))
         current_step += 1

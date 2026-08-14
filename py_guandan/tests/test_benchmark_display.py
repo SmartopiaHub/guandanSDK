@@ -2,6 +2,36 @@ from guandan_benchmark import display
 from guandan_benchmark.tracker import GameTracker
 
 
+def test_report_header_prints_benchmark_id_and_name(capsys) -> None:
+    display.print_report(
+        config={"lobby_url": "https://lobby.example", "api_key": ""},
+        participants=[],
+        game={
+            "benchmark_id": "BENCH0001",
+            "benchmark_name": "Nightly run",
+            "runtime": {},
+        },
+        monitor_result=None,
+        warnings=[],
+        errors=[],
+    )
+    out = capsys.readouterr().out
+    assert "Benchmark ID:  BENCH0001  (Nightly run)" in out
+
+
+def test_report_header_omits_benchmark_line_for_legacy_game(capsys) -> None:
+    display.print_report(
+        config={"lobby_url": "https://lobby.example", "api_key": ""},
+        participants=[],
+        game={"test_game_id": "tg", "runtime": {}},
+        monitor_result=None,
+        warnings=[],
+        errors=[],
+    )
+    out = capsys.readouterr().out
+    assert "Benchmark ID:" not in out
+
+
 def _player(seat: int) -> dict:
     team = "redTeam" if seat in (1, 3) else "blueTeam"
     return {

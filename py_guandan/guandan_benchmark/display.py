@@ -486,6 +486,11 @@ def print_report(
         print(f"  API Key:       {masked}")
     else:
         print("  API Key:       (not set)")
+    if game and game.get("benchmark_id"):
+        benchmark_line = f"  Benchmark ID:  {game['benchmark_id']}"
+        if game.get("benchmark_name"):
+            benchmark_line += f"  ({game['benchmark_name']})"
+        print(benchmark_line)
     print()
 
     # Participants

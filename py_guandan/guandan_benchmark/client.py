@@ -437,3 +437,120 @@ def create_test_game(
     log("INFO", f"  status_url:   {runtime.get('status_url')}")
     log("INFO", f"  cancel_url:   {runtime.get('cancel_url')}")
     return data
+
+
+# ---------------------------------------------------------------------------
+# Create benchmark (developer-center benchmark API)
+# ---------------------------------------------------------------------------
+def build_bots(participants: list[dict]) -> dict[str, dict]:
+    """Map resolved participants back to the benchmark API's per-seat bots.
+
+    Returns a dict keyed ``seat_1``..``seat_4`` where each entry is:
+        { "type": "builtin", "bot_code": "strongBot" }
+        { "type": "deployed", "deployment_id": "<id>", "deployment_key": "..." }
+
+    ``deployment_key`` is only included when present (private deployments).
+    """
+    bots: dict[str, dict] = {}
+    for participant in participants:
+        seat = participant["seat"]
+        if participant.get("type") == "external_bot":
+            entry: dict = {
+                "type": "deployed",
+                "deployment_id": participant["deployment_id"],
+            }
+            deployment_key = (participant.get("deployment_key", "") or "").strip()
+            if deployment_key:
+                entry["deployment_key"] = deployment_key
+        else:
+            entry = {
+                "type": "builtin",
+                "bot_code": participant.get("bot_code", "strongBot"),
+            }
+        bots[f"seat_{seat}"] = entry
+    return bots
+
+
+def create_benchmark(
+    lobby_url: str,
+    api_key: str,
+    participants: list[dict],
+    num_rounds: int = 10,
+    num_series: int = 1,
+    name: str = "",
+    total_timeout: int = 3600,
+    heartbeat_timeout: int = 120,
+) -> Optional[dict]:
+    """POST /api/benchmarks to create (and start) a benchmark run.
+
+    The benchmark API is the developer-center entry point shared with the
+    UI: the lobby creates the test game, subscribes to the game server SSE
+    stream, and persists per-round results + the final summary.  Auth uses
+    the same automation key as ``create_test_game`` (``benchmarks:create``
+    or ``test_games:create`` scope); no API key is sent in the body.
+
+    Returns the parsed JSON response on success — the ``runtime`` shape is
+    identical to ``create_test_game`` so downstream SSE monitoring is
+    unchanged — or None.
+    """
+    idempotency_key = str(uuid.uuid4())
+    payload = {
+        "num_rounds": num_rounds,
+        "num_series": num_series,
+        "total_timeout": total_timeout,
+        "heartbeat_timeout": heartbeat_timeout,
+        "bots": build_bots(participants),
+    }
+    if name:
+        payload["name"] = name
+
+    log("INFO", f"Creating benchmark via {lobby_url}/api/benchmarks ...")
+    log("INFO", f"  Idempotency-Key: {idempotency_key}")
+    if name:
+        log("INFO", f"  Name: {name}")
+    log("INFO", f"  Rounds: {num_rounds} x {num_series} series, "
+                f"timeouts: {total_timeout}s / {heartbeat_timeout}s")
+    log("INFO", f"  Bots: {json.dumps(payload['bots'], indent=2)}")
+
+    try:
+        resp = _post(
+            f"{lobby_url}/api/benchmarks",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Idempotency-Key": idempotency_key,
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=15,
+        )
+    except HttpTransportError as e:
+        log("ERROR", f"Request failed: {e}")
+        return None
+
+    if not resp.ok:
+        try:
+            body = resp.json()
+            code = body.get("code", "unknown")
+            msg = body.get("message", resp.text)
+        except (ValueError, AttributeError):
+            code = "non_json_response"
+            msg = resp.text[:500]
+        log("ERROR", f"Benchmark creation failed: HTTP {resp.status_code}  "
+                      f"code={code}  message={msg}")
+        return None
+
+    data = resp.json()
+    log("INFO", "Benchmark created successfully!")
+    log("INFO", f"  benchmark_id:   {data.get('benchmark_id')}")
+    if data.get("benchmark_name"):
+        log("INFO", f"  benchmark_name: {data.get('benchmark_name')}")
+    log("INFO", f"  test_game_id:   {data.get('test_game_id')}")
+    log("INFO", f"  game_id:        {data.get('game_id')}")
+    log("INFO", f"  status:         {data.get('status')}")
+    runtime = data.get("runtime", {})
+    log("INFO", f"  runtime:        {runtime.get('runtime_server_id')} "
+                 f"at {runtime.get('base_url')}")
+    log("INFO", f"  events_url:     {runtime.get('events_url')}")
+    log("INFO", f"  status_url:     {runtime.get('status_url')}")
+    log("INFO", f"  cancel_url:     {runtime.get('cancel_url')}")
+    return data

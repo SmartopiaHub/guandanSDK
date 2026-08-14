@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import socket
 from ipaddress import ip_address
 from typing import Any
 from urllib.parse import urlsplit
 
 import requests
+from requests.adapters import HTTPAdapter
 
 
 def is_loopback_url(url: str) -> bool:
@@ -18,6 +20,27 @@ def is_loopback_url(url: str) -> bool:
         return ip_address(hostname).is_loopback
     except ValueError:
         return False
+
+
+class _TcpNoDelayAdapter(HTTPAdapter):
+    """HTTP adapter that enables TCP_NODELAY on every pooled socket.
+
+    The game server writes SSE events immediately, one small write per
+    event. With Nagle enabled on the client side, the client's delayed
+    ACKs let the server's kernel hold small writes until the *next*
+    write flushes them — heartbeats arrive one period late, and the
+    final event of a stream (e.g. ``test.completed``) is never flushed
+    at all, leaving stream consumers such as the benchmark monitor
+    hanging. TCP_NODELAY makes the client ACK immediately so the
+    server's writes flush in real time.
+    """
+
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault(
+            "socket_options",
+            [(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)],
+        )
+        super().init_poolmanager(*args, **kwargs)
 
 
 class HttpTransportError(RuntimeError):
@@ -57,6 +80,10 @@ class GuandanHttpClient:
         self._normal_session = requests.Session()
         self._direct_session = requests.Session()
         self._direct_session.trust_env = False
+        nodelay_adapter = _TcpNoDelayAdapter()
+        for session in (self._normal_session, self._direct_session):
+            session.mount("http://", nodelay_adapter)
+            session.mount("https://", nodelay_adapter)
 
     def session_for(self, url: str) -> requests.Session:
         return self._direct_session if is_loopback_url(url) else self._normal_session
