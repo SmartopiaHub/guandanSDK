@@ -1673,7 +1673,7 @@ bots:
 ```
 
 Each seat can use:
-- `type: builtin` with `bot_code: "basicBot"` or `"strongBot"` (internal bots)
+- `type: builtin` with `bot_code: "basicBot"`, `"strongBot"`, or `"tactician"` (internal bots)
 - `type: deployed` with `deployment_id` and optional `deployment_key` (your bot)
 
 **Running:**

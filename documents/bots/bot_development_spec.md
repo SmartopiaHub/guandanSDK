@@ -63,6 +63,15 @@ provider ("Built-in Provider"), which owns the built-in definitions `AAAAAA`
 and its definitions are `public` and `active`. These are automatically created
 on lobby startup if they do not exist.
 
+The game server additionally serves the built-in bot code `tactician`
+(Tactician Bot) — a StrongBot-equivalent rule-engine bot whose tactical rules
+live in admin-editable YAML files (`guandan_tactician_bot/rules/`) rather than
+compiled Dart. It is registered directly in the game server's built-in agent
+factory (`basicBot` | `strongBot` | `tactician`), without a lobby registry row;
+its decisions carry a `DecisionTrace` logic chain. See
+[ADR-0015](../../decisions/ADR-0015-tactician-rule-engine.md) and the
+[Tactician Rule Authoring Guide](../../developer/tactician_rule_authoring.md).
+
 ## Runtime Protocol Version
 
 The first supported protocol version is `guandan-bot-v1`.
