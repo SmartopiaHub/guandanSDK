@@ -33,3 +33,20 @@ def test_protocol_types_informational_game_payloads() -> None:
     })
 
     assert isinstance(message.payload, NewPhaseMessage)
+
+
+def test_session_start_params_round_trip() -> None:
+    from guandan_bot.protocol import SessionStart
+
+    message = SessionStart("s1", params={"strength": 25, "mode": "max"})
+    parsed = SessionStart.from_dict(message.to_dict())
+    assert parsed.params == {"strength": 25, "mode": "max"}
+
+
+def test_session_start_omits_params_and_tolerates_missing_key() -> None:
+    from guandan_bot.protocol import SessionStart
+
+    # to_dict omits params when None (legacy payloads stay byte-compatible).
+    assert "params" not in SessionStart("s1").to_dict()
+    # from_dict tolerates payloads without params.
+    assert SessionStart.from_dict({"session_id": "s2"}).params is None

@@ -204,3 +204,19 @@ def test_game_configuration_matches_benchmark_payload() -> None:
 def test_game_configuration_requires_four_seats() -> None:
     with pytest.raises(ValueError, match="exactly seats"):
         TestGameConfig("url", "key", (Participant.builtin(1),))
+
+
+def test_application_forwards_session_params_to_bot() -> None:
+    application = BotApplication(ThreeMethodBot, bot_code="example")
+    response = application.handle(
+        SessionStart("s2", player_id="p1", seat=1, params={"strength": 25})
+    )
+    assert response is not None and response.to_dict()["accepted"] is True
+    session = application._sessions["s2"]
+    assert session.bot.parameters == {"strength": 25}
+
+
+def test_application_leaves_parameters_none_without_params() -> None:
+    application = BotApplication(ThreeMethodBot, bot_code="example")
+    application.handle(SessionStart("s3", player_id="p1", seat=2))
+    assert application._sessions["s3"].bot.parameters is None

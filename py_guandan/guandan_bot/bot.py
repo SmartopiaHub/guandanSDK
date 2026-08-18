@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 from guandan_core import (
     Card,
     GameMessage,
@@ -72,6 +73,10 @@ class Bot(ABC):
 
     context: BotContext
     cards_on_hand: PokerCardList
+
+    # Typed parameter values forwarded by the game server via
+    # SessionStartMessage.params (empty dict when the bot declares none).
+    parameters: dict[str, Any] | None = None
 
     @abstractmethod
     def play_hand(self, request: PlayRequest) -> Hand:

@@ -269,3 +269,47 @@ def test_create_benchmark_returns_none_on_failure(monkeypatch) -> None:
     )
 
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Typed bot parameters
+# ---------------------------------------------------------------------------
+def test_build_participants_forwards_builtin_parameter_values() -> None:
+    participants = benchmark_client.build_participants(
+        {
+            1: {
+                "type": "builtin",
+                "bot_code": "tactician",
+                "parameter_values": {"strength": 25},
+            }
+        },
+        [],
+    )
+    assert participants[0]["type"] == "internal_bot"
+    assert participants[0]["bot_code"] == "tactician"
+    assert participants[0]["parameter_values"] == {"strength": 25}
+
+
+def test_build_participants_omits_empty_parameter_values() -> None:
+    participants = benchmark_client.build_participants(
+        {1: {"type": "builtin", "bot_code": "strongBot"}}, []
+    )
+    assert "parameter_values" not in participants[0]
+
+
+def test_build_bots_forwards_parameter_values() -> None:
+    bots = benchmark_client.build_bots(
+        [
+            {
+                "seat": 1,
+                "type": "internal_bot",
+                "bot_code": "tactician",
+                "parameter_values": {"strength": 25},
+            }
+        ]
+    )
+    assert bots["seat_1"] == {
+        "type": "builtin",
+        "bot_code": "tactician",
+        "parameter_values": {"strength": 25},
+    }

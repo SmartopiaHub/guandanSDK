@@ -139,9 +139,21 @@ class MessageType(Enum):
     HEARTBEAT = "heartbeat"
     AUTO_DELEGATED = "autoDelegated"
 
+    # ── Extension (custom) message types ───────────────────────────────────
+    CUSTOM = "custom"
+
     @classmethod
     def from_name(cls, name: str) -> "MessageType":
-        return cls(name)
+        """Parses a MessageType from its wire string.
+
+        Unknown names resolve to ``CUSTOM`` instead of raising, so extension
+        message types (see :func:`register_custom_type`) can flow through the
+        same parsing path as built-in messages.
+        """
+        try:
+            return cls(name)
+        except ValueError:
+            return cls.CUSTOM
 
 
 class PayloadType(Enum):
@@ -361,13 +373,30 @@ class BotSelectionData:
 
 @dataclass
 class GameMessage:
-    """Base class for all messages exchanged between client and game server."""
+    """Base class for all messages exchanged between client and game server.
+
+    Extension messages defined outside ``guandan_core`` (see
+    :func:`register_custom_type`) are constructed with
+    ``type=MessageType.CUSTOM`` and override :attr:`wire_type` with their own
+    subtype string.
+    """
 
     type: MessageType
     message_id: Optional[str] = None
 
+    @property
+    def wire_type(self) -> str:
+        """The JSON ``"type"`` value emitted by :meth:`to_json`.
+
+        Built-in messages use the ``MessageType`` value of ``self.type``.
+        Extension messages — subclasses constructed with
+        ``MessageType.CUSTOM`` — override this property with their own subtype
+        string, e.g. ``"pHintRequest"``.
+        """
+        return self.type.value
+
     def to_json(self) -> dict[str, Any]:
-        json: dict[str, Any] = {"type": self.type.value}
+        json: dict[str, Any] = {"type": self.wire_type}
         if self.message_id is not None:
             json["message_id"] = self.message_id
         return json
@@ -1729,6 +1758,50 @@ class SeatRequest(PlayerRequestMessage):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Extension (custom) message type registry
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Registry for extension message types defined outside guandan_core, mirroring
+# Dart's `CustomMessageRegistry`.
+_CUSTOM_FACTORIES: dict[str, Any] = {}
+
+
+def register_custom_type(
+    type_name: str,
+    factory: Any,
+) -> None:
+    """Registers a factory for an extension message type defined outside
+    ``guandan_core`` (mirror of Dart's ``CustomMessageRegistry.register``).
+
+    Extension message classes are [GameMessage] (or [GameRoomMessage])
+    subclasses with ``type=MessageType.CUSTOM`` and their own wire-type subtype
+    string (the JSON ``"type"`` field), produced by overriding the
+    ``wire_type`` property.
+
+    Call this at process startup **before** any frame of that type can arrive:
+
+    .. code-block:: python
+
+        register_custom_type(MyMessage.WIRE_TYPE, MyMessage.from_json)
+
+    ``GameMessageFactory.from_json`` then dispatches the type through the
+    registered factory. Re-registering an existing wire type replaces its
+    factory (idempotent). A wire type that collides with a built-in
+    ``MessageType`` name is rejected — built-in messages always win.
+    """
+    try:
+        MessageType(type_name)
+    except ValueError:
+        pass
+    else:
+        raise ValueError(
+            f"{type_name!r} collides with a built-in MessageType; "
+            "built-in messages cannot be overridden by the registry"
+        )
+    _CUSTOM_FACTORIES[type_name] = factory
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Factory (JSON → typed message dispatch)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1833,6 +1906,11 @@ class GameMessageFactory:
             return HeartbeatMessage.from_json(data)
         if mt == MessageType.AUTO_DELEGATED:
             return AutoDelegationMessage.from_json(data)
+
+        # ── Extension (custom) message types registered outside the core ──
+        factory = _CUSTOM_FACTORIES.get(msg_type)
+        if factory is not None:
+            return factory(data)
 
         # Fallback: generic GameMessage preserving all fields
         return GameMessage.from_json(data)

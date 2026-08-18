@@ -92,6 +92,11 @@ class SessionStartMessage extends BotMessage {
   /// The number of standard decks in the game (outbound agent only).
   final int? deckCount;
 
+  /// The effective parameter values for this bot session (outbound agent
+  /// only), e.g. `{"strength": 30}`. Null or absent when the definition
+  /// declares no parameters or no values were set.
+  final Map<String, Object?>? params;
+
   @override
   BotMessageType get type => BotMessageType.sessionStart;
 
@@ -104,6 +109,7 @@ class SessionStartMessage extends BotMessage {
     this.ruleSet,
     this.protocolVersion,
     this.deckCount,
+    this.params,
   });
 
   factory SessionStartMessage.fromJson(Map<String, dynamic> json) {
@@ -116,6 +122,9 @@ class SessionStartMessage extends BotMessage {
       ruleSet: json['rule_set'] as String?,
       protocolVersion: json['protocol_version'] as String?,
       deckCount: json['number_of_standard_decks'] as int?,
+      params: json['params'] == null
+          ? null
+          : Map<String, Object?>.from(json['params'] as Map),
     );
   }
 
@@ -132,6 +141,7 @@ class SessionStartMessage extends BotMessage {
       if (protocolVersion != null) 'protocol_version': protocolVersion,
       if (deckCount != null)
         'number_of_standard_decks': deckCount,
+      if (params != null && params!.isNotEmpty) 'params': params,
     };
   }
 }

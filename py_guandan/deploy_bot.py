@@ -24,6 +24,7 @@ Usage::
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import select
@@ -353,8 +354,13 @@ def _pick_or_create_provider(
 def _pick_or_create_definition(
     client: BotDeploymentClient,
     provider_id: str,
+    *,
+    parameters: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     """List definitions for the provider and let the user pick or create.
+
+    ``parameters`` (an optional typed-parameter schema) is passed to
+    ``create_definition`` when a new definition is created.
 
     Returns ``(bot_definition_id, bot_code)``.
     """
@@ -410,6 +416,7 @@ def _pick_or_create_definition(
             display_name=display_name,
             version=version,
             bot_code=bot_code,
+            parameters=parameters,
         )
     except BotDeploymentError as exc:
         log("Failed to create definition", str(exc), colour=Colour.RED)
@@ -483,6 +490,40 @@ def _display_deployment_info(result: dict[str, Any]) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Deploy a bot to the Guandan lobby.",
+    )
+    parser.add_argument(
+        "--parameters",
+        help=(
+            "JSON typed-parameter schema for a newly created definition, "
+            "e.g. '[{\"name\": \"strength\", \"type\": \"integer\", "
+            "\"default\": 50, \"min\": 0}]'"
+        ),
+    )
+    parser.add_argument(
+        "--parameter-values",
+        help=(
+            "JSON deployment-time parameter values, "
+            "e.g. '{\"strength\": 25}'"
+        ),
+    )
+    args = parser.parse_args()
+    parameters: list[dict[str, Any]] | None = None
+    if args.parameters:
+        try:
+            parameters = json.loads(args.parameters)
+        except json.JSONDecodeError:
+            log("--parameters must be valid JSON", colour=Colour.RED)
+            return 1
+    parameter_values: dict[str, Any] | None = None
+    if args.parameter_values:
+        try:
+            parameter_values = json.loads(args.parameter_values)
+        except json.JSONDecodeError:
+            log("--parameter-values must be valid JSON", colour=Colour.RED)
+            return 1
+
     print(
         f"{Colour.BOLD}Guandan Bot Deployment{Colour.RESET}",
         flush=True,
@@ -601,7 +642,7 @@ def main() -> int:
         # ------------------------------------------------------------------
         step(4, "Bot definition")
         bot_definition_id, bot_code = _pick_or_create_definition(
-            client, provider_id
+            client, provider_id, parameters=parameters
         )
 
         # ------------------------------------------------------------------
@@ -660,6 +701,7 @@ def main() -> int:
                 transport_type=transport_type,
                 supported_bot_definition_ids=[bot_definition_id],
                 max_concurrent_sessions=max_concurrent_sessions,
+                parameter_values=parameter_values,
             )
         except BotDeploymentError as exc:
             log("Deployment failed", str(exc), colour=Colour.RED)

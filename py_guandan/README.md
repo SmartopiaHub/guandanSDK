@@ -593,6 +593,34 @@ if (
     print(message.payload.available_cards)
 ```
 
+### Extension (custom) message types
+
+Like the Dart core, the message model supports wire types defined outside
+the package. `MessageType.CUSTOM` is reserved for extension classes, which
+give themselves an own subtype via a `wire_type` property (the JSON `"type"`
+value). Register their `from_json` factories so `GameMessageFactory.from_json`
+deserializes them like built-ins — registration is process-global, idempotent,
+and rejects names that collide with built-in `MessageType`s:
+
+```python
+from guandan_core import MessageType, register_custom_type
+
+class MyExtensionMessage(GameRoomMessage):
+    type: MessageType = field(default=MessageType.CUSTOM, init=False)
+
+    @property
+    def wire_type(self) -> str:
+        return self.WIRE_TYPE
+
+    WIRE_TYPE = "iMyExtension"
+
+    @classmethod
+    def from_json(cls, data: dict) -> "MyExtensionMessage":
+        ...
+
+register_custom_type(MyExtensionMessage.WIRE_TYPE, MyExtensionMessage.from_json)
+```
+
 ## Proxy Bot
 
 The `proxy_bot` module provides a Guandan bot whose decisions are supplied

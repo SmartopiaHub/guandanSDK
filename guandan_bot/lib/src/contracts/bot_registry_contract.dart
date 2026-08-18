@@ -1,3 +1,7 @@
+library;
+
+import 'bot_parameter_contract.dart';
+
 enum BotProviderStatus {
   pending('pending'),
   approved('approved'),
@@ -165,6 +169,7 @@ class BotDefinition {
     required this.createdAt,
     required this.updatedAt,
     this.strength,
+    this.parameters = const <BotParameterDefinition>[],
   });
 
   final String botDefinitionId;
@@ -174,6 +179,7 @@ class BotDefinition {
   final String description;
   final String botCode;
   final String? strength;
+  final List<BotParameterDefinition> parameters;
   final List<String> supportedRuleSets;
   final List<String> supportedProtocolVersions;
   final BotVisibility visibility;
@@ -192,6 +198,10 @@ class BotDefinition {
       description: json['description'] as String? ?? '',
       botCode: (json['bot_code'] as String?) ?? '',
       strength: json['strength'] as String? ?? json['difficulty'] as String?,
+      parameters: (json['parameters'] as List<dynamic>? ?? const <dynamic>[])
+          .map((value) => BotParameterDefinition.fromJson(
+              Map<String, dynamic>.from(value as Map)))
+          .toList(growable: false),
       supportedRuleSets:
           (json['supported_rule_sets'] as List<dynamic>? ?? const <dynamic>[])
               .map((value) => value.toString())
@@ -217,6 +227,7 @@ class BotDefinition {
       'description': description,
       'bot_code': botCode,
       if (strength != null) 'strength': strength,
+      'parameters': [for (final p in parameters) p.toJson()],
       'supported_rule_sets': supportedRuleSets,
       'supported_protocol_versions': supportedProtocolVersions,
       'visibility': visibility.code,
@@ -245,6 +256,7 @@ class BotDeployment {
     this.lastDeploymentGameServerId,
     this.apiKeyHash,
     this.authorizationApiKey,
+    this.parameterValues = const <String, Object?>{},
   });
 
   final String deploymentId;
@@ -270,6 +282,11 @@ class BotDeployment {
   /// deployment. This is sensitive and is only serialized for internal
   /// runtime provisioning when explicitly requested.
   final String? authorizationApiKey;
+
+  /// Parameter values set at deployment time; they override the definition's
+  /// defaults (and are themselves overridden by per-seat values). Validated
+  /// against the definition schema by the lobby.
+  final Map<String, Object?> parameterValues;
 
   factory BotDeployment.fromJson(Map<String, dynamic> json) {
     final baseUrl = (json['base_url'] as String?)?.trim();
@@ -305,6 +322,8 @@ class BotDeployment {
       updatedAt: DateTime.parse(json['updated_at'] as String),
       authorizationApiKey: json['authorization_api_key'] as String? ??
           json['api_key'] as String?,
+      parameterValues:
+          Map<String, Object?>.from(json['parameter_values'] as Map? ?? const {}),
     );
   }
 
@@ -327,6 +346,7 @@ class BotDeployment {
       'updated_at': updatedAt.toIso8601String(),
       if (includeSensitive && authorizationApiKey != null)
         'authorization_api_key': authorizationApiKey,
+      if (parameterValues.isNotEmpty) 'parameter_values': parameterValues,
     };
   }
 }
@@ -421,12 +441,17 @@ class DeployedBotSeatAssignment extends BotSeatAssignment {
     required this.deployment,
     this.protocolVersion = 'guandan-bot-v1',
     this.botCode = 'WebSocketBot',
+    this.parameterValues = const <String, Object?>{},
   });
 
   final String botDefinitionId;
   final BotDeployment deployment;
   final String protocolVersion;
   final String botCode;
+
+  /// The effective per-seat parameter values (already merged by the lobby:
+  /// definition default < deployment value < seat value).
+  final Map<String, Object?> parameterValues;
 
   factory DeployedBotSeatAssignment.fromJson(Map<String, dynamic> json) {
     return DeployedBotSeatAssignment(
@@ -438,6 +463,8 @@ class DeployedBotSeatAssignment extends BotSeatAssignment {
       ),
       protocolVersion: json['protocol_version'] as String? ?? 'guandan-bot-v1',
       botCode: json['bot_model'] as String? ?? 'WebSocketBot',
+      parameterValues:
+          Map<String, Object?>.from(json['parameter_values'] as Map? ?? const {}),
     );
   }
 
@@ -450,6 +477,7 @@ class DeployedBotSeatAssignment extends BotSeatAssignment {
       'deployment': deployment.toJson(includeSensitive: includeSensitive),
       'protocol_version': protocolVersion,
       'bot_model': botCode,
+      if (parameterValues.isNotEmpty) 'parameter_values': parameterValues,
     };
   }
 }
@@ -459,15 +487,22 @@ class BuiltInBotSeatAssignment extends BotSeatAssignment {
     required super.seat,
     required super.playerId,
     required this.botCode,
+    this.parameterValues = const <String, Object?>{},
   });
 
   final String botCode;
+
+  /// The effective per-seat parameter values (already merged by the lobby:
+  /// built-in catalog default < seat value).
+  final Map<String, Object?> parameterValues;
 
   factory BuiltInBotSeatAssignment.fromJson(Map<String, dynamic> json) {
     return BuiltInBotSeatAssignment(
       seat: json['seat'] as int,
       playerId: json['player_id'] as String,
       botCode: (json['bot_code'] as String?) ?? '',
+      parameterValues:
+          Map<String, Object?>.from(json['parameter_values'] as Map? ?? const {}),
     );
   }
 
@@ -477,6 +512,7 @@ class BuiltInBotSeatAssignment extends BotSeatAssignment {
       'seat': seat,
       'player_id': playerId,
       'bot_code': botCode,
+      if (parameterValues.isNotEmpty) 'parameter_values': parameterValues,
     };
   }
 }
@@ -516,6 +552,7 @@ class CreateBotDefinitionRequest {
     required this.supportedProtocolVersions,
     this.strength,
     this.visibility = BotVisibility.private,
+    this.parameters = const <BotParameterDefinition>[],
   });
 
   final String providerId;
@@ -524,6 +561,7 @@ class CreateBotDefinitionRequest {
   final String description;
   final String botCode;
   final String? strength;
+  final List<BotParameterDefinition> parameters;
   final List<String> supportedRuleSets;
   final List<String> supportedProtocolVersions;
   final BotVisibility visibility;
@@ -549,6 +587,10 @@ class CreateBotDefinitionRequest {
               .where((value) => value.isNotEmpty)
               .toList(growable: false),
       visibility: BotVisibility.fromCode(json['visibility'] as String? ?? ''),
+      parameters: (json['parameters'] as List<dynamic>? ?? const <dynamic>[])
+          .map((value) => BotParameterDefinition.fromJson(
+              Map<String, dynamic>.from(value as Map)))
+          .toList(growable: false),
     );
   }
 
@@ -560,6 +602,7 @@ class CreateBotDefinitionRequest {
       'description': description,
       'bot_code': botCode,
       if (strength != null) 'strength': strength,
+      'parameters': [for (final p in parameters) p.toJson()],
       'supported_rule_sets': supportedRuleSets,
       'supported_protocol_versions': supportedProtocolVersions,
       'visibility': visibility.code,
@@ -577,6 +620,7 @@ class RegisterBotDeploymentRequest {
     this.baseUrl,
     this.region,
     this.authorizationApiKey,
+    this.parameterValues = const <String, Object?>{},
   });
 
   final String providerId;
@@ -586,6 +630,10 @@ class RegisterBotDeploymentRequest {
   final List<String> supportedProtocolVersions;
   final int maxConcurrentSessions;
   final String? region;
+
+  /// Parameter values set at deployment time; validated against the schema of
+  /// the first supported bot definition by the lobby.
+  final Map<String, Object?> parameterValues;
 
   /// Deprecated for HTTP deployments. The platform issues the invocation token
   /// and returns it as [BotRegistrationResponse.botInvocationToken].
@@ -615,6 +663,8 @@ class RegisterBotDeploymentRequest {
       region: (json['region'] as String?)?.trim(),
       authorizationApiKey: (json['authorization_api_key'] as String?)?.trim() ??
           (json['api_key'] as String?)?.trim(),
+      parameterValues:
+          Map<String, Object?>.from(json['parameter_values'] as Map? ?? const {}),
     );
   }
 
@@ -627,6 +677,7 @@ class RegisterBotDeploymentRequest {
       'supported_protocol_versions': supportedProtocolVersions,
       'max_concurrent_sessions': maxConcurrentSessions,
       'region': region,
+      if (parameterValues.isNotEmpty) 'parameter_values': parameterValues,
       if (authorizationApiKey != null && authorizationApiKey!.isNotEmpty)
         'api_key': authorizationApiKey,
     };

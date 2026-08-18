@@ -69,6 +69,7 @@ class BotApplication:
         if not isinstance(bot, Bot):
             raise TypeError("bot_factory must return a Bot instance")
         bot._bind(context)
+        bot.parameters = message.params
         self._sessions[message.session_id] = _Session(bot, context)
         return SessionStarted(message.session_id, True)
 

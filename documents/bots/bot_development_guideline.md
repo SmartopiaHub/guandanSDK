@@ -495,7 +495,8 @@ request the platform makes to your `/sessions` endpoint.
   "seat": 1,
   "rule_set": "classic",
   "protocol_version": "guandan-bot-v1",
-  "number_of_standard_decks": 2
+  "number_of_standard_decks": 2,
+  "params": { "strength": 25 }
 }
 ```
 
@@ -508,6 +509,7 @@ request the platform makes to your `/sessions` endpoint.
 | `rule_set` | string | Rule set name, e.g. `"classic"`. |
 | `protocol_version` | string | Always `"guandan-bot-v1"`. |
 | `number_of_standard_decks` | int | Number of standard 54-card decks (usually 2). |
+| `params` | object | **Optional.** Effective typed-parameter values for this seat (the definition defaults overlaid by deployment values and the seat assignment). Values are validated by the lobby; unknown keys are ignored. Omitted entirely when the bot declares no parameters. |
 
 > **WebSocket bots** receive a minimal `session_start` first (only
 > `session_id`, `deployment_id`, `protocol_version`), followed by a full one

@@ -159,11 +159,20 @@ def load_config(
                     )
                 if bot_type == "builtin":
                     code = entry.get("bot_code", "")
-                    if code not in ("basicBot", "strongBot"):
+                    if code not in ("basicBot", "strongBot", "tactician"):
                         errors.append(
-                            f"bots.{key}.bot_code must be 'basicBot' or "
-                            f"'strongBot', got: {code!r}"
+                            f"bots.{key}.bot_code must be 'basicBot', "
+                            f"'strongBot' or 'tactician', got: {code!r}"
                         )
+                parameter_values = entry.get("parameter_values")
+                if parameter_values is not None and not isinstance(
+                    parameter_values, dict
+                ):
+                    errors.append(
+                        f"bots.{key}.parameter_values must be a mapping "
+                        f"(e.g. {{\"strength\": 25}}), "
+                        f"got: {type(parameter_values).__name__}"
+                    )
                 bot_configs[seat] = entry
             else:
                 errors.append(

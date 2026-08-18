@@ -311,6 +311,9 @@ def _resolve_deployed_bot(
     }
     if deployment_key:
         participant["deployment_key"] = deployment_key
+    parameter_values = bot_cfg.get("parameter_values")
+    if isinstance(parameter_values, dict) and parameter_values:
+        participant["parameter_values"] = parameter_values
     return participant, None
 
 
@@ -321,11 +324,15 @@ def _resolve_builtin_bot(
     """Resolve a builtin bot config into a participant dict."""
     bot_code = bot_cfg.get("bot_code", "strongBot")
     log("INFO", f"  Seat {seat}: builtin bot  bot_code={bot_code}")
-    return {
+    participant = {
         "seat": seat,
         "type": "internal_bot",
         "bot_code": bot_code,
-    }, None
+    }
+    parameter_values = bot_cfg.get("parameter_values")
+    if isinstance(parameter_values, dict) and parameter_values:
+        participant["parameter_values"] = parameter_values
+    return participant, None
 
 
 def build_participants(
@@ -450,6 +457,7 @@ def build_bots(participants: list[dict]) -> dict[str, dict]:
         { "type": "deployed", "deployment_id": "<id>", "deployment_key": "..." }
 
     ``deployment_key`` is only included when present (private deployments).
+    ``parameter_values`` (typed bot parameters) is forwarded when present.
     """
     bots: dict[str, dict] = {}
     for participant in participants:
@@ -467,6 +475,9 @@ def build_bots(participants: list[dict]) -> dict[str, dict]:
                 "type": "builtin",
                 "bot_code": participant.get("bot_code", "strongBot"),
             }
+        parameter_values = participant.get("parameter_values")
+        if isinstance(parameter_values, dict) and parameter_values:
+            entry["parameter_values"] = parameter_values
         bots[f"seat_{seat}"] = entry
     return bots
 

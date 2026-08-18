@@ -29,8 +29,13 @@ class MessageUnionGenerator extends Generator {
       }
     }
 
+    buffer.writeln('      default:');
     buffer.writeln(
-        '      default: throw UnsupportedError("Unknown type: \${json["type"]}");');
+        '        final extensionFactory = CustomMessageRegistry.lookup("\${json["type"]}");');
+    buffer.writeln(
+        '        if (extensionFactory != null) return extensionFactory(json);');
+    buffer.writeln(
+        '        throw UnsupportedError("Unknown type: \${json["type"]}");');
     buffer.writeln('    }');
     buffer.writeln('  }');
     buffer.writeln('}');

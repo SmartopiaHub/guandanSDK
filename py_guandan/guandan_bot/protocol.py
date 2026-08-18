@@ -60,6 +60,7 @@ class SessionStart(BotMessage):
     rule_set: str | None = None
     protocol_version: str | None = None
     deck_count: int | None = None
+    params: dict[str, Any] | None = None
     type: ClassVar[str] = "session_start"
 
     @classmethod
@@ -73,6 +74,7 @@ class SessionStart(BotMessage):
             rule_set=data.get("rule_set"),
             protocol_version=data.get("protocol_version"),
             deck_count=data.get("number_of_standard_decks"),
+            params=data.get("params"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -85,6 +87,7 @@ class SessionStart(BotMessage):
             "rule_set": self.rule_set,
             "protocol_version": self.protocol_version,
             "number_of_standard_decks": self.deck_count,
+            "params": self.params,
         }
         data.update({key: value for key, value in optional.items() if value is not None})
         return data

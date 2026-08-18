@@ -78,6 +78,7 @@ from .message import (
     TributeCardMessage,
     TributeResistanceMessage,
     TributeResultMessage,
+    register_custom_type,
 )
 from .player import Player, PlayerPosition, PlayerTeam, get_player_position, next_player, next_seat
 
@@ -112,6 +113,7 @@ __all__ = [
     "validate_tribute_card",
     # Messages — enums
     "MessageType",
+    "register_custom_type",
     "PayloadType",
     "RemovalReason",
     "ServerResponseCode",

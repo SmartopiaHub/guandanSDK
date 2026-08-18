@@ -31,6 +31,17 @@ heartbeat_timeout: 1200     # disconnect if no SSE event within this window
 # Seat layout (standard 4-player Guandan):
 #   seat 1 ↔ seat 3  (red team)
 #   seat 2 ↔ seat 4  (blue team)
+#
+# Builtin bot codes: 'basicBot', 'strongBot', 'tactician'.
+# The tactician bot accepts an optional 'strength' parameter (integer >= 0;
+# rules with a higher strength are ignored; default 50):
+#   seat_1:
+#     type: builtin
+#     bot_code: tactician
+#     parameter_values:
+#       strength: 25
+# Deployed seats accept an optional 'parameter_values' mapping too (validated
+# against the definition's typed-parameter schema by the lobby).
 bots:
   seat_1:
     type: builtin

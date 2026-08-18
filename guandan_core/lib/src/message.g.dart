@@ -92,6 +92,9 @@ class GameMessageFactory {
       case MessageType.iRoundEnded:
         return RoundEndedMessage.fromJson(json);
       default:
+        final extensionFactory =
+            CustomMessageRegistry.lookup("${json["type"]}");
+        if (extensionFactory != null) return extensionFactory(json);
         throw UnsupportedError("Unknown type: ${json["type"]}");
     }
   }

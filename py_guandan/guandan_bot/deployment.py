@@ -113,23 +113,34 @@ class BotDeploymentClient:
         description: str = "",
         supported_rule_sets: list[str] | None = None,
         supported_protocol_versions: list[str] | None = None,
+        parameters: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Create a new bot definition under the given provider."""
+        """Create a new bot definition under the given provider.
+
+        ``parameters`` is an optional typed-parameter schema: a list of
+        ``{"name", "type", ...}`` dicts where ``type`` is one of
+        ``"integer" | "boolean" | "string"``. Integer parameters may carry
+        ``min``/``max`` bounds; string parameters may carry ``choices``.
+        Each entry may include a ``default`` value and a ``description``.
+        """
         if supported_rule_sets is None:
             supported_rule_sets = ["guandan-standard-v1"]
         if supported_protocol_versions is None:
             supported_protocol_versions = ["guandan-bot-v1"]
+        body: dict[str, Any] = {
+            "provider_id": provider_id,
+            "display_name": display_name,
+            "version": version,
+            "bot_code": bot_code,
+            "description": description,
+            "supported_rule_sets": supported_rule_sets,
+            "supported_protocol_versions": supported_protocol_versions,
+        }
+        if parameters is not None:
+            body["parameters"] = parameters
         return self._post(
             "/api/v1/developer/bots/definitions",
-            {
-                "provider_id": provider_id,
-                "display_name": display_name,
-                "version": version,
-                "bot_code": bot_code,
-                "description": description,
-                "supported_rule_sets": supported_rule_sets,
-                "supported_protocol_versions": supported_protocol_versions,
-            },
+            body,
             scope="bots:manage",
         )
 
@@ -151,10 +162,14 @@ class BotDeploymentClient:
         supported_protocol_versions: list[str] | None = None,
         max_concurrent_sessions: int = 10,
         description: str = "",
+        parameter_values: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Register a new bot deployment.
 
         ``transport_type`` must be ``"websocket"`` or ``"http"``.
+        ``parameter_values`` optionally provides deployment-time values for
+        the definition's typed parameters (the definition defaults are used
+        for any parameter not listed).
 
         Returns the full response including the one-time
         ``deployment_management_key`` and (for HTTP bots)
@@ -172,6 +187,8 @@ class BotDeploymentClient:
         }
         if base_url is not None:
             body["base_url"] = base_url
+        if parameter_values is not None:
+            body["parameter_values"] = parameter_values
         return self._post(
             "/api/v1/developer/bots/deployments",
             body,

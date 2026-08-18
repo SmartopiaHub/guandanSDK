@@ -266,11 +266,27 @@ enum MessageType {
   heartbeat,
 
   /// Auto-delegation (托管) — automatic play via a choosen bot.
-  autoDelegated;
+  autoDelegated,
+
+  /// Extension (custom) message type defined outside `guandan_core`.
+  ///
+  /// [MessageType.from] returns this value for any wire string that is not a
+  /// built-in message name. Subclasses of [GameMessage] (or [GameRoomMessage])
+  /// constructed with this type are extension messages: they override
+  /// [GameMessage.wireType] with their own subtype string and are deserialized
+  /// by [GameMessageFactory.fromJson] through [CustomMessageRegistry].
+  custom;
 
   /// Parses a [MessageType] from its JSON-encoded [name] string.
+  ///
+  /// Unknown names resolve to [custom] instead of throwing, so that extension
+  /// message types (see [CustomMessageRegistry]) can flow through the same
+  /// parsing path as built-in messages.
   factory MessageType.from(String name) {
-    return MessageType.values.firstWhere((e) => e.name == name);
+    return MessageType.values.firstWhere(
+      (e) => e.name == name,
+      orElse: () => MessageType.custom,
+    );
   }
 
   /// Returns the enum [name] as the JSON wire value.
@@ -398,14 +414,19 @@ class JoinRoomResponsePayload extends MessagePayload {
   Map<String, dynamic> toJson() {
     final json = super.toJson();
     json['room_info'] = roomInfo.toJson();
-    json['bots'] = bots.map((bot) => bot.toJson(withCardsOnHand: false, withPlayedCards: false)).toList();
+    json['bots'] = bots
+        .map(
+            (bot) => bot.toJson(withCardsOnHand: false, withPlayedCards: false))
+        .toList();
     return json;
   }
 
   factory JoinRoomResponsePayload.fromJson(Map<String, dynamic> json) {
     return JoinRoomResponsePayload(
       roomInfo: RoomMetadata.fromJson(json['room_info']),
-      bots: json['bots'] == null ? [] : (json['bots'] as List).map((bot) => Player.fromJson(bot)).toList(),
+      bots: json['bots'] == null
+          ? []
+          : (json['bots'] as List).map((bot) => Player.fromJson(bot)).toList(),
     );
   }
 }
@@ -440,7 +461,6 @@ class PlayHandResponsePayload extends MessagePayload {
     );
   }
 }
-
 
 /// Payload for a failed pay-tribute request.
 ///
@@ -502,7 +522,7 @@ class ReturnCardResponsePayload extends MessagePayload {
       returnCard: PokerCard.from(json['return_card']),
     );
   }
-} 
+}
 
 /// Annotation marking a message class for inclusion in the generated
 /// [GameMessageFactory.fromJson] dispatch.
@@ -519,18 +539,29 @@ class MsgAnnotation {
 /// Base class for all messages exchanged between client and game server.
 ///
 /// Every message has a [type] discriminator and an optional [messageId] for
-/// request-response correlation. 
+/// request-response correlation.
 ///
 /// Subclasses add domain-specific fields and are serialized/deserialized via
 /// [toJson] / [fromJson]. Runtime dispatch from raw JSON is handled by the
 /// generated [GameMessageFactory.fromJson] in [message.g.dart].
+///
+/// Extension messages defined outside `guandan_core` (see
+/// [CustomMessageRegistry]) are constructed with `type: MessageType.custom`
+/// and override [wireType] with their own subtype string.
 class GameMessage {
   /// The message type discriminator, used as the `"type"` JSON field.
   final MessageType type;
 
+  /// The JSON `"type"` value emitted by [toJson].
+  ///
+  /// Built-in messages use the [MessageType.value] of [type]. Extension
+  /// messages — subclasses constructed with [MessageType.custom] — override
+  /// this getter with their own subtype string, e.g. `'pHintRequest'`
+  /// (see [CustomMessageRegistry]).
+  String get wireType => type.value;
+
   /// Optional unique identifier for request-response correlation.
   String? messageId;
-
 
   GameMessage({required this.type, this.messageId});
 
@@ -543,12 +574,11 @@ class GameMessage {
 
   Map<String, dynamic> toJson() {
     return {
-      'type': type.value,
+      'type': wireType,
       'message_id': messageId,
     };
   }
 }
-
 
 /// Base class for messages scoped to a specific game room.
 ///
@@ -569,18 +599,20 @@ class GameRoomMessage extends GameMessage {
   /// This is a UUID v4 generated when the [GameState] is first created.
   /// It is distinct from [roomId] — a room may persist across multiple
   /// games, or be reused, while the game ID is unique per game instance.
-  final String  gameId;
+  final String gameId;
 
-  GameRoomMessage({required super.type, super.messageId, required this.roomId, required this.gameId});
-
+  GameRoomMessage(
+      {required super.type,
+      super.messageId,
+      required this.roomId,
+      required this.gameId});
 
   factory GameRoomMessage.fromJson(Map<String, dynamic> json) {
     return GameRoomMessage(
-      type: MessageType.from(json['type']),
-      messageId: json['message_id'],
-      roomId: json['room_id'],
-      gameId: json['game_id'] ?? ''
-    );
+        type: MessageType.from(json['type']),
+        messageId: json['message_id'],
+        roomId: json['room_id'],
+        gameId: json['game_id'] ?? '');
   }
 
   @override
@@ -640,7 +672,8 @@ class NewRoundMessage extends GameRoomMessage {
 
   factory NewRoundMessage.fromJson(Map<String, dynamic> json) {
     final rawPlayers = json['players'] as List;
-    final players = rawPlayers.map((playerJson) => Player.fromJson(playerJson)).toList();
+    final players =
+        rawPlayers.map((playerJson) => Player.fromJson(playerJson)).toList();
     return NewRoundMessage(
       players: players,
       messageId: json['message_id'],
@@ -649,8 +682,11 @@ class NewRoundMessage extends GameRoomMessage {
       roundId: json['round_id'],
       startPlayerId: json['start_player_id'],
       levelRank: CardRank(json['level_rank']),
-      teamLevelRank: TeamLevelRanks.fromJson(json['team_level_rank'] as Map<String, dynamic>),
-      previousRoundResult: json['previous_round_result'] != null ? RoundResult.fromJson(json['previous_round_result'], players) : null,
+      teamLevelRank: TeamLevelRanks.fromJson(
+          json['team_level_rank'] as Map<String, dynamic>),
+      previousRoundResult: json['previous_round_result'] != null
+          ? RoundResult.fromJson(json['previous_round_result'], players)
+          : null,
       hand: Hand.fromString(json['hand']),
     );
   }
@@ -663,7 +699,8 @@ class NewRoundMessage extends GameRoomMessage {
     json['level_rank'] = levelRank.name;
     json['team_level_rank'] = teamLevelRank.toJson();
     json['previous_round_result'] = previousRoundResult?.toJson();
-    json['players'] = players.map((player) => player.toJson(withCardsOnHand: false)).toList();
+    json['players'] =
+        players.map((player) => player.toJson(withCardsOnHand: false)).toList();
     json['hand'] = hand.toString();
     return json;
   }
@@ -685,7 +722,6 @@ class NewPhaseMessage extends GameRoomMessage {
     super.messageId,
     required super.roomId,
     required super.gameId,
-
     required this.phaseId,
     required this.startPlayerId,
   }) : super(type: MessageType.iNewPhase);
@@ -708,7 +744,6 @@ class NewPhaseMessage extends GameRoomMessage {
     return json;
   }
 }
-
 
 /// Broadcast to inform players who the start player is for a round or phase.
 ///
@@ -754,7 +789,6 @@ class StartPlayerMessage extends GameRoomMessage {
     return json;
   }
 }
-
 
 @MsgAnnotation(MessageType.iHandPlayed)
 class HandPlayedMessage extends GameRoomMessage {
@@ -848,7 +882,8 @@ class TributeResultMessage extends GameRoomMessage {
     required this.roundId,
   }) : super(type: MessageType.iTributeResult);
 
-  factory TributeResultMessage.fromJson(Map<String, dynamic> json, {List<Player>? players}) {
+  factory TributeResultMessage.fromJson(Map<String, dynamic> json,
+      {List<Player>? players}) {
     return TributeResultMessage(
       messageId: json['message_id'],
       tributeResult: TributeResult.fromJson(json['tribute_result'], players),
@@ -904,7 +939,6 @@ abstract class ServerRequestMessage extends GameRoomMessage {
     return json;
   }
 }
-
 
 /// Sent by the server to a player when it is their turn to play cards.
 ///
@@ -962,7 +996,8 @@ class ServerPlayHandRequest extends ServerRequestMessage {
       json['seat_of_hand_on_table'] = seatOfHandOnTable;
     }
     if (gameStateSnapshot != null) {
-      json['game_state_snapshot'] = gameStateSnapshot!.toJson(includeCardsOnHandForPlayers: [playerId], includePlayedCards: true);
+      json['game_state_snapshot'] = gameStateSnapshot!.toJson(
+          includeCardsOnHandForPlayers: [playerId], includePlayedCards: true);
     }
     return json;
   }
@@ -971,16 +1006,23 @@ class ServerPlayHandRequest extends ServerRequestMessage {
     return ServerPlayHandRequest(
       messageId: json['message_id'],
       playerId: json['player_id'],
-      timeout: json['timeout'] != null ? Duration(seconds: json['timeout']) : null,
+      timeout:
+          json['timeout'] != null ? Duration(seconds: json['timeout']) : null,
       roundId: json['round_id']!,
       handOnTable: Hand.fromString(json['hand_on_table']),
-      seatOfHandOnTable: json['seat_of_hand_on_table'] != null ? int.tryParse(json['seat_of_hand_on_table'].toString()) : null,
+      seatOfHandOnTable: json['seat_of_hand_on_table'] != null
+          ? int.tryParse(json['seat_of_hand_on_table'].toString())
+          : null,
       turnId: json['turn_id'],
       roomId: json['room_id']!,
       gameId: json['game_id'],
       levelRank: CardRank(json['level_rank']),
-      availableCards: json['available_cards'] != null ? PokerCardList.fromString(json['available_cards']) : null,
-      gameStateSnapshot: json['game_state_snapshot'] != null ? GameState.fromJson(json['game_state_snapshot']) : null,
+      availableCards: json['available_cards'] != null
+          ? PokerCardList.fromString(json['available_cards'])
+          : null,
+      gameStateSnapshot: json['game_state_snapshot'] != null
+          ? GameState.fromJson(json['game_state_snapshot'])
+          : null,
     );
   }
 }
@@ -1011,11 +1053,14 @@ class ServerTributeRequest extends ServerRequestMessage {
     return ServerTributeRequest(
       messageId: json['message_id'],
       playerId: json['player_id'],
-      timeout: json['timeout'] != null ? Duration(seconds: json['timeout']) : null,
+      timeout:
+          json['timeout'] != null ? Duration(seconds: json['timeout']) : null,
       roundId: json['round_id']!,
       roomId: json['room_id']!,
       gameId: json['game_id'],
-      availableCards: json['available_cards'] != null ? PokerCardList.fromString(json['available_cards']) : null,
+      availableCards: json['available_cards'] != null
+          ? PokerCardList.fromString(json['available_cards'])
+          : null,
     );
   }
 
@@ -1028,7 +1073,6 @@ class ServerTributeRequest extends ServerRequestMessage {
     return json;
   }
 }
-
 
 /// Sent by the server to a player requesting them to return a card (还牌)
 /// in response to receiving a tribute.
@@ -1055,11 +1099,14 @@ class ServerReturnCardRequest extends ServerRequestMessage {
     return ServerReturnCardRequest(
       messageId: json['message_id'],
       playerId: json['player_id'],
-      timeout: json['timeout'] != null ? Duration(seconds: json['timeout']) : null,
+      timeout:
+          json['timeout'] != null ? Duration(seconds: json['timeout']) : null,
       roundId: json['round_id']!,
       roomId: json['room_id']!,
       gameId: json['game_id'],
-      availableCards: json['available_cards'] != null ? PokerCardList.fromString(json['available_cards']) : null,
+      availableCards: json['available_cards'] != null
+          ? PokerCardList.fromString(json['available_cards'])
+          : null,
     );
   }
 
@@ -1067,12 +1114,11 @@ class ServerReturnCardRequest extends ServerRequestMessage {
   Map<String, dynamic> toJson() {
     final json = super.toJson();
     if (availableCards != null) {
-      json['available_cards'] = availableCards!.toString();   
+      json['available_cards'] = availableCards!.toString();
     }
     return json;
   }
 }
-
 
 /// Abstract base for player-to-server request messages within a game room.
 ///
@@ -1180,7 +1226,6 @@ class JoinRoomRequest extends PlayerRequestMessage {
   }
 }
 
-
 /// Player-to-server request to leave the current game room.
 @MsgAnnotation(MessageType.pQuitRoomRequest)
 class QuitRoomRequest extends PlayerRequestMessage {
@@ -1262,11 +1307,9 @@ class PlayerPlayHandRequest extends PlayerRequestMessage {
   }
 }
 
-
 /// Player-to-server request to pay a tribute card (进贡) to a higher-ranked opponent.
 @MsgAnnotation(MessageType.pPayTributeRequest)
 class PlayerPayTributeRequest extends PlayerRequestMessage {
-
   /// The tribute card that the player attempts to pay.
   final PokerCard tribute;
 
@@ -1313,7 +1356,6 @@ class PlayerPayTributeRequest extends PlayerRequestMessage {
 /// Player-to-server request to return a card (还牌) in response to receiving a tribute.
 @MsgAnnotation(MessageType.pReturnCardRequest)
 class PlayerReturnCardRequest extends PlayerRequestMessage {
-
   /// The card that the player attempts to return.
   final PokerCard returnCard;
 
@@ -1363,7 +1405,6 @@ class PlayerReturnCardRequest extends PlayerRequestMessage {
 /// the server treats this as a request to start the game instead.
 @MsgAnnotation(MessageType.pNewRoundRequest)
 class NewRoundRequest extends PlayerRequestMessage {
-
   NewRoundRequest({
     super.messageId,
     required super.playerId,
@@ -1380,7 +1421,6 @@ class NewRoundRequest extends PlayerRequestMessage {
     );
   }
 }
-
 
 /// Player-to-server request (from room owner) to start the game.
 ///
@@ -1418,8 +1458,11 @@ class StartGameRequest extends PlayerRequestMessage {
       playerId: json['player_id'],
       roomId: json['room_id'],
       gameId: json['game_id'],
-      startPlayerSeat: json['start_player_seat'] != null ? int.tryParse(json['start_player_seat'].toString()) : null,
-      levelRank: json['level_rank'] != null ? CardRank(json['level_rank']) : null,
+      startPlayerSeat: json['start_player_seat'] != null
+          ? int.tryParse(json['start_player_seat'].toString())
+          : null,
+      levelRank:
+          json['level_rank'] != null ? CardRank(json['level_rank']) : null,
       fillWithBots: json['fill_with_bots'] ?? true,
       gameStateSnapshot: json['game_state_snapshot'] != null
           ? GameState.fromJson(json['game_state_snapshot'])
@@ -1432,7 +1475,10 @@ class StartGameRequest extends PlayerRequestMessage {
     final json = super.toJson();
     if (gameStateSnapshot != null) {
       final playerIds = gameStateSnapshot!.players.map((p) => p.id).toList();
-      json['game_state_snapshot'] = gameStateSnapshot!.toJson(includeCardsOnHandForPlayers: playerIds, includePlayedCards: true, includePlayerTypeInfo: true);
+      json['game_state_snapshot'] = gameStateSnapshot!.toJson(
+          includeCardsOnHandForPlayers: playerIds,
+          includePlayedCards: true,
+          includePlayerTypeInfo: true);
       json['start_player_seat'] = startPlayerSeat;
       json['level_rank'] = levelRank?.name;
       json['fill_with_bots'] = fillWithBots;
@@ -1440,7 +1486,6 @@ class StartGameRequest extends PlayerRequestMessage {
     return json;
   }
 }
-
 
 /// Player-to-server request to create a new game room.
 ///
@@ -1450,7 +1495,6 @@ class StartGameRequest extends PlayerRequestMessage {
 ///
 @MsgAnnotation(MessageType.pCreateRoomRequest)
 class CreateRoomRequest extends PlayerRequestMessage {
-
   /// The name of the room to be created.
   final String roomName;
 
@@ -1536,7 +1580,6 @@ class RoomOwnerMessage extends GameRoomMessage {
   }
 }
 
-
 /// Broadcast when a player joins a game room.
 ///
 /// Sent to the joining player with [roomInfo], [gameState], and [reconnectToken]
@@ -1590,8 +1633,12 @@ class PlayerJoinedRoomMessage extends GameRoomMessage {
       gameId: json['game_id'],
       botCode: json['bot_code'],
       replacedPlayerId: json['replaced_player_id'],
-      roomInfo: json['room_info']!=null ? RoomMetadata.fromJson(json['room_info']) : null,
-      gameState: json['game_state']!=null ? GameState.fromJson(json['game_state']) : null,
+      roomInfo: json['room_info'] != null
+          ? RoomMetadata.fromJson(json['room_info'])
+          : null,
+      gameState: json['game_state'] != null
+          ? GameState.fromJson(json['game_state'])
+          : null,
       reconnectToken: json['reconnect_token'] as String?,
       autoDelegated: json['auto_delegated'] as bool?,
     );
@@ -1612,9 +1659,10 @@ class PlayerJoinedRoomMessage extends GameRoomMessage {
     }
     if (gameState != null) {
       json['game_state'] = gameState!.toJson(
-        includePlayedCards: true, 
-        includeCardsOnHandForPlayers: gameState!.players.map((p) => p.id).toList(),
-        includePlayerTypeInfo: true);
+          includePlayedCards: true,
+          includeCardsOnHandForPlayers:
+              gameState!.players.map((p) => p.id).toList(),
+          includePlayerTypeInfo: true);
     }
     if (reconnectToken != null) {
       json['reconnect_token'] = reconnectToken;
@@ -1625,7 +1673,6 @@ class PlayerJoinedRoomMessage extends GameRoomMessage {
     return json;
   }
 }
-
 
 /// Broadcast when a player quits the game room.
 ///
@@ -1653,7 +1700,9 @@ class PlayerQuitRoomMessage extends GameRoomMessage {
       playerId: json['player_id'],
       roomId: json['room_id'],
       gameId: json['game_id'],
-      replacementPlayer: json.containsKey('replacement_player') ? Player.fromJson(json['replacement_player']) : null,
+      replacementPlayer: json.containsKey('replacement_player')
+          ? Player.fromJson(json['replacement_player'])
+          : null,
     );
   }
 
@@ -1662,12 +1711,12 @@ class PlayerQuitRoomMessage extends GameRoomMessage {
     final json = super.toJson();
     json['player_id'] = playerId;
     if (replacementPlayer != null) {
-      json['replacement_player'] = replacementPlayer!.toJson(withCardsOnHand: false);
+      json['replacement_player'] =
+          replacementPlayer!.toJson(withCardsOnHand: false);
     }
     return json;
   }
 }
-
 
 /// Sent to a player with the result of a previous request.
 ///
@@ -1705,9 +1754,12 @@ class RequestResultMessage extends GameMessage {
     return RequestResultMessage(
       messageId: json['message_id'],
       playerId: json['player_id'],
-      request: json['request'] != null ? MessageType.from(json['request']) : null,
+      request:
+          json['request'] != null ? MessageType.from(json['request']) : null,
       result: ServerResponseCode.fromName(json['result']),
-      payload: json['payload'] != null ? MessagePayload.fromJson(json['payload']) : null,
+      payload: json['payload'] != null
+          ? MessagePayload.fromJson(json['payload'])
+          : null,
       roomId: json['room_id'],
     );
   }
@@ -1716,7 +1768,7 @@ class RequestResultMessage extends GameMessage {
   Map<String, dynamic> toJson() {
     final json = super.toJson();
     json['player_id'] = playerId;
-    if (request!=null) {
+    if (request != null) {
       json['request'] = request!.name;
     }
     json['result'] = result.name;
@@ -1730,7 +1782,6 @@ class RequestResultMessage extends GameMessage {
   }
 }
 
-
 /// Sent to a player when additional time is granted for their current action.
 ///
 /// Used in rooms without a time limit (不计时的房间).
@@ -1741,7 +1792,6 @@ class MoreTimeGrantedMessage extends GameRoomMessage {
 
   /// The new total allocated time in seconds (remaining + additional).
   final int newAllocatedSeconds;
-
 
   MoreTimeGrantedMessage({
     super.messageId,
@@ -1770,7 +1820,6 @@ class MoreTimeGrantedMessage extends GameRoomMessage {
   }
 }
 
-
 /// Specifies which bot to use for auto-delegation. Sent from client to server
 /// when a player enables auto-play with a specific bot choice. The server
 /// omits this field in broadcast messages.
@@ -1791,6 +1840,12 @@ class BotSelectionData {
   final String? protocolVersion;
   final String? authorizationApiKey;
 
+  /// Per-seat parameter values for the bot (overrides of the
+  /// definition/deployment values). Only honored for built-in bots with a
+  /// parameter schema (e.g. tactician `strength`) and for deployed bots whose
+  /// definition declares parameters.
+  final Map<String, Object?> parameterValues;
+
   const BotSelectionData({
     required this.type,
     required this.botCode,
@@ -1800,6 +1855,7 @@ class BotSelectionData {
     this.transportType,
     this.protocolVersion,
     this.authorizationApiKey,
+    this.parameterValues = const <String, Object?>{},
   });
 
   factory BotSelectionData.fromJson(Map<String, dynamic> json) {
@@ -1812,6 +1868,9 @@ class BotSelectionData {
       transportType: json['transport_type'] as String?,
       protocolVersion: json['protocol_version'] as String?,
       authorizationApiKey: json['authorization_api_key'] as String?,
+      parameterValues: json['parameter_values'] == null
+          ? const <String, Object?>{}
+          : Map<String, Object?>.from(json['parameter_values'] as Map),
     );
   }
 
@@ -1828,6 +1887,7 @@ class BotSelectionData {
     if (authorizationApiKey != null) {
       json['authorization_api_key'] = authorizationApiKey;
     }
+    if (parameterValues.isNotEmpty) json['parameter_values'] = parameterValues;
     return json;
   }
 }
@@ -1864,7 +1924,8 @@ class AutoDelegationMessage extends GameRoomMessage {
       roomId: json['room_id'],
       gameId: json['game_id'],
       botSelection: json['bot_selection'] != null
-          ? BotSelectionData.fromJson(json['bot_selection'] as Map<String, dynamic>)
+          ? BotSelectionData.fromJson(
+              json['bot_selection'] as Map<String, dynamic>)
           : null,
     );
   }
@@ -1880,7 +1941,6 @@ class AutoDelegationMessage extends GameRoomMessage {
     return json;
   }
 }
-
 
 /// Broadcast when a player takes or changes a seat in the room.
 @MsgAnnotation(MessageType.iPlayerSeat)
@@ -1909,7 +1969,7 @@ class PlayerSeatMessage extends GameRoomMessage {
       playerId: json['player_id'],
       seat: json['seat'],
       team: PlayerTeam.fromName(json['team']),
-      roomId: json['room_id'], 
+      roomId: json['room_id'],
       gameId: json['game_id'],
     );
   }
@@ -1924,11 +1984,9 @@ class PlayerSeatMessage extends GameRoomMessage {
   }
 }
 
-
 /// Broadcast when the game room is closed.
 @MsgAnnotation(MessageType.iGameRoomClosed)
 class GameRoomClosedMessage extends GameRoomMessage {
-
   GameRoomClosedMessage({
     super.messageId,
     required super.roomId,
@@ -1942,8 +2000,7 @@ class GameRoomClosedMessage extends GameRoomMessage {
       gameId: json['game_id'],
     );
   }
-} 
-
+}
 
 /// Broadcast when a player 接风 (leads the next phase because their teammate
 /// emptied their hand and no opponent followed with a valid play).
@@ -1981,7 +2038,6 @@ class JieFengMessage extends GameRoomMessage {
     return json;
   }
 }
-
 
 /// Broadcast when team scores are updated (e.g. after a round with A+ results).
 @MsgAnnotation(MessageType.iTeamScores)
@@ -2082,7 +2138,8 @@ class RoundResultMessage extends GameRoomMessage {
     this.emptiedByPlayerId,
   }) : super(type: MessageType.iRoundResult);
 
-  factory RoundResultMessage.fromJson(Map<String, dynamic> json, {List<Player>? players}) {
+  factory RoundResultMessage.fromJson(Map<String, dynamic> json,
+      {List<Player>? players}) {
     return RoundResultMessage(
       messageId: json['message_id'],
       roomId: json['room_id'],
@@ -2102,10 +2159,8 @@ class RoundResultMessage extends GameRoomMessage {
     }
     json['is_partial'] = isPartial;
     return json;
-    
   }
 }
-
 
 /// Sent to a player with the remaining card counts (or full hands) of other players.
 ///
@@ -2125,7 +2180,8 @@ class CardsOnHandMessage extends GameRoomMessage {
 
   factory CardsOnHandMessage.fromJson(Map<String, dynamic> json) {
     final rawCards = json['cards_on_hand'] as Map<String, dynamic>;
-    final cardsOnHand = rawCards.map((k, v) => MapEntry(k, v != null ? PokerCardList.fromString(v) : null));
+    final cardsOnHand = rawCards.map(
+        (k, v) => MapEntry(k, v != null ? PokerCardList.fromString(v) : null));
     return CardsOnHandMessage(
       messageId: json['message_id'],
       cardsOnHand: cardsOnHand,
@@ -2137,12 +2193,11 @@ class CardsOnHandMessage extends GameRoomMessage {
   @override
   Map<String, dynamic> toJson() {
     final json = super.toJson();
-    json['cards_on_hand'] = cardsOnHand.map((k, v) => MapEntry(k, v?.toString()));
+    json['cards_on_hand'] =
+        cardsOnHand.map((k, v) => MapEntry(k, v?.toString()));
     return json;
   }
-
 }
-
 
 /// Sent to a player when they are removed from the room (e.g. inactivity,
 /// disconnection, or kicked by the owner).
@@ -2182,7 +2237,6 @@ class PlayerRemovedMessage extends GameRoomMessage {
     return json;
   }
 }
-
 
 /// Sent to all players when a player times out on a server request
 /// (e.g. failing to play a hand within the allotted time).
@@ -2285,7 +2339,6 @@ class TributeCardMessage extends GameRoomMessage {
   }
 }
 
-
 /// Broadcast when a card is returned (还牌) in response to receiving a tribute.
 @MsgAnnotation(MessageType.iReturnCard)
 class ReturnCardMessage extends GameRoomMessage {
@@ -2334,7 +2387,6 @@ class ReturnCardMessage extends GameRoomMessage {
   }
 }
 
-
 /// Broadcast when tribute is resisted (抗贡).
 ///
 /// Resistance occurs when both teams have equal red joker counts, cancelling
@@ -2368,8 +2420,8 @@ class TributeResistanceMessage extends GameRoomMessage {
       roundId: json['round_id'],
       startPlayerId: json['start_player_id'],
       redJokerCounts: Map<int, int>.from(
-        (json['red_joker_counts'] as Map<String, dynamic>).map((k, v) => MapEntry(int.parse(k), v))
-      ),
+          (json['red_joker_counts'] as Map<String, dynamic>)
+              .map((k, v) => MapEntry(int.parse(k), v))),
     );
   }
 
@@ -2378,11 +2430,11 @@ class TributeResistanceMessage extends GameRoomMessage {
     final json = super.toJson();
     json['round_id'] = roundId;
     json['start_player_id'] = startPlayerId;
-    json['red_joker_counts'] = redJokerCounts.map((k, v) => MapEntry(k.toString(), v));
+    json['red_joker_counts'] =
+        redJokerCounts.map((k, v) => MapEntry(k.toString(), v));
     return json;
   }
 }
-
 
 /// Broadcast to the room creator when a game room is successfully created.
 ///
@@ -2409,9 +2461,11 @@ class GameRoomCreatedMessage extends GameRoomMessage {
       roomId: json['room_id'],
       gameId: json['game_id'],
       players: (json['players'] as List<dynamic>)
-          .map((playerJson) => Player.fromJson(playerJson as Map<String, dynamic>))
+          .map((playerJson) =>
+              Player.fromJson(playerJson as Map<String, dynamic>))
           .toList(),
-      roomInfo: RoomMetadata.fromJson(json['room_info'] as Map<String, dynamic>),
+      roomInfo:
+          RoomMetadata.fromJson(json['room_info'] as Map<String, dynamic>),
     );
   }
 
@@ -2419,7 +2473,8 @@ class GameRoomCreatedMessage extends GameRoomMessage {
   Map<String, dynamic> toJson() {
     final json = super.toJson();
     json['room_info'] = roomInfo.toJson();
-    json['players'] = players.map((player) => player.toJson(withCardsOnHand: false)).toList();
+    json['players'] =
+        players.map((player) => player.toJson(withCardsOnHand: false)).toList();
     return json;
   }
 }
@@ -2451,8 +2506,6 @@ class HeartbeatMessage extends GameMessage {
     return json;
   }
 }
-
-
 
 /// Player-to-server request for additional time on the current action.
 @MsgAnnotation(MessageType.pExtraTimeRequest)
@@ -2501,7 +2554,6 @@ class ExtraTimeRequest extends PlayerRequestMessage {
     return json;
   }
 }
-
 
 /// Player-to-server request to change to a different seat in the room.
 @MsgAnnotation(MessageType.pSeatRequest)
@@ -2560,7 +2612,6 @@ class ServerClosedMessage extends GameMessage {
     return json;
   }
 }
-
 
 /// Broadcast when a round ends, carrying the full [Round] object with all
 /// phase, turn, and result details for the completed round.
