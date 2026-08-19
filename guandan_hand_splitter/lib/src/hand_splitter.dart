@@ -24,4 +24,22 @@ class PowerBasedHandSplitter implements HandSplitter {
   }
 }
 
+/// A hand splitter that favours the fewest possible hands (a proxy for the
+/// "min hands" grouping). Intended as a baseline for comparison.
+class MinHandsSplitter implements HandSplitter {
+
+  final CardRank levelRank;
+  final int numberOfPlayers;
+
+  int get _deckCount => (numberOfPlayers / 2).round();
+
+  MinHandsSplitter(this.levelRank, this.numberOfPlayers);
+
+  @override
+  (List<Hand>, double) split(PokerCardList cards) {
+    final result = combine(cards, MinHandsCostEstimator(levelRank, _deckCount));
+    return (result.bestSolution, result.cost);
+  }
+}
+
 

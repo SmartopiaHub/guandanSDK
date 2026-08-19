@@ -31,46 +31,69 @@ class MinHandsCostEstimator implements CostEstimator {
     return 1;
   }
 
-  int calculateMinHandsImp(int cnt1, int cnt2, int cnt3, int cnt4plus, int wildCards, List<int> wildConfig) {
+  /// Returns the minimum number of hands achievable with [wildCards] wild
+  /// cards, together with the wild-card usage configuration that achieves it.
+  ///
+  /// `wildConfig` indexes: 0 = wild card used as a single, 1 = used to make a
+  /// pair, 2 = used to make a triple, 3 = used to make a bomb, 4 = used to
+  /// grow an existing bomb. The returned config always accounts for exactly
+  /// [wildCards] wild cards (each index sums to `wildCards`).
+  (int, List<int>) calculateMinHandsImp(
+      int cnt1, int cnt2, int cnt3, int cnt4plus, int wildCards) {
     if (wildCards <= 0) {
-      return cnt1 + max(cnt2, cnt3);
-    } else {
-      int minHandsPossible = 28;
-      if (cnt1 > 0) {
-        var cost = calculateMinHandsImp(cnt1 - 1, cnt2 + 1, cnt3, cnt4plus, wildCards - 1, wildConfig);
-        if (cost < minHandsPossible) {
-          wildConfig[1] = wildConfig[1] + 1; // use a wild card to make a pair
-          minHandsPossible = cost;
-        }
-      }
-      if (cnt2 > 0) {
-        var cost = calculateMinHandsImp(cnt1, cnt2 - 1, cnt3 + 1, cnt4plus, wildCards - 1, wildConfig);
-        if (cost < minHandsPossible) {
-          wildConfig[2] = wildConfig[2] + 1; // use a wild card to make a three of a kind
-          minHandsPossible = cost;
-        }
-      }
-      if (cnt3 > 0) {
-        var cost = calculateMinHandsImp(cnt1, cnt2, cnt3 - 1, cnt4plus + 1, wildCards - 1, wildConfig);
-        if (cost < minHandsPossible) {
-          wildConfig[3] = wildConfig[3] + 1; // use a wild card to make a bomb
-          minHandsPossible = cost;
-        }
-      }
-      if (cnt4plus > 0) {
-        var cost = calculateMinHandsImp(cnt1, cnt2, cnt3, cnt4plus, wildCards - 1, wildConfig);
-        if (cost < minHandsPossible) {
-          wildConfig[4] = wildConfig[4] + 1; // use a wild card to make a bigger bomb
-          minHandsPossible = cost;
-        }
-      }
-      var cost = calculateMinHandsImp(cnt1+1, cnt2, cnt3, cnt4plus, wildCards - 1, wildConfig);
-      if (cost < minHandsPossible) {
-        wildConfig[0] = wildConfig[0] + 1; // use a wild card as a single
-        minHandsPossible = cost;
-      }
-      return minHandsPossible;
+      return (cnt1 + max(cnt2, cnt3), [0, 0, 0, 0, 0]);
     }
+    int minHandsPossible = 28;
+    List<int> bestConfig = [0, 0, 0, 0, 0];
+    // use a wild card to make a pair
+    if (cnt1 > 0) {
+      var (cost, cfg) = calculateMinHandsImp(
+          cnt1 - 1, cnt2 + 1, cnt3, cnt4plus, wildCards - 1);
+      if (cost < minHandsPossible) {
+        minHandsPossible = cost;
+        bestConfig = cfg;
+        bestConfig[1]++;
+      }
+    }
+    // use a wild card to make a three of a kind
+    if (cnt2 > 0) {
+      var (cost, cfg) = calculateMinHandsImp(
+          cnt1, cnt2 - 1, cnt3 + 1, cnt4plus, wildCards - 1);
+      if (cost < minHandsPossible) {
+        minHandsPossible = cost;
+        bestConfig = cfg;
+        bestConfig[2]++;
+      }
+    }
+    // use a wild card to make a bomb
+    if (cnt3 > 0) {
+      var (cost, cfg) = calculateMinHandsImp(
+          cnt1, cnt2, cnt3 - 1, cnt4plus + 1, wildCards - 1);
+      if (cost < minHandsPossible) {
+        minHandsPossible = cost;
+        bestConfig = cfg;
+        bestConfig[3]++;
+      }
+    }
+    // use a wild card to make a bigger bomb
+    if (cnt4plus > 0) {
+      var (cost, cfg) = calculateMinHandsImp(
+          cnt1, cnt2, cnt3, cnt4plus, wildCards - 1);
+      if (cost < minHandsPossible) {
+        minHandsPossible = cost;
+        bestConfig = cfg;
+        bestConfig[4]++;
+      }
+    }
+    // use a wild card as a single
+    var (cost, cfg) =
+        calculateMinHandsImp(cnt1 + 1, cnt2, cnt3, cnt4plus, wildCards - 1);
+    if (cost < minHandsPossible) {
+      minHandsPossible = cost;
+      bestConfig = cfg;
+      bestConfig[0]++;
+    }
+    return (minHandsPossible, bestConfig);
   }
 
   int calculateMinHands(PokerCardList cards, int wildCards, List<Hand> solution) {
@@ -84,8 +107,8 @@ class MinHandsCostEstimator implements CostEstimator {
         cnt[4]++;
       }
     });
-    List<int> wildConfig = List.filled(5, 0);
-    var cost = calculateMinHandsImp(cnt[1], cnt[2], cnt[3], cnt[4], wildCards, wildConfig);
+    final (cost, wildConfig) =
+        calculateMinHandsImp(cnt[1], cnt[2], cnt[3], cnt[4], wildCards);
     
     // group regular cards
     var singles = group.entries.where((e) => e.value.length == 1).map((e) => e.value).toList();
@@ -116,7 +139,11 @@ class MinHandsCostEstimator implements CostEstimator {
 
     if (wildConfig[1] > 0) {
       for( var i = 0; i < wildConfig[1]; i++) {
-        Hand maxSingleHand = solution.where((hand) => hand.type == HandType.single && !hand.cards[0].isJoker).reduce((a, b) => a.power > b.power ? a : b);
+        var singleCandidates = solution.where((hand) => hand.type == HandType.single && !hand.cards[0].isJoker).toList();
+        if (singleCandidates.isEmpty) {
+          continue; // no non-joker single to pair up; keep the wildcard as a single
+        }
+        Hand maxSingleHand = singleCandidates.reduce((a, b) => a.power > b.power ? a : b);
         maxSingleHand.add(wildCard);
         maxSingleHand.type = HandType.pair;
       }
@@ -124,7 +151,11 @@ class MinHandsCostEstimator implements CostEstimator {
 
     if (wildConfig[2] > 0) {
       for( var i = 0; i < wildConfig[2]; i++) {
-        Hand maxPair = solution.where((hand) => hand.type == HandType.pair && !hand.cards[0].isJoker).reduce((a, b) => a.power > b.power ? a : b);
+        var pairCandidates = solution.where((hand) => hand.type == HandType.pair && !hand.cards[0].isJoker).toList();
+        if (pairCandidates.isEmpty) {
+          continue;
+        }
+        Hand maxPair = pairCandidates.reduce((a, b) => a.power > b.power ? a : b);
         maxPair.add(wildCard);
         maxPair.type = HandType.triple;
       }
@@ -132,7 +163,11 @@ class MinHandsCostEstimator implements CostEstimator {
 
     if (wildConfig[3] > 0) {
       for( var i = 0; i < wildConfig[3]; i++) {
-        Hand maxTriple = solution.where((hand) => hand.type == HandType.triple && !hand.cards[0].isJoker).reduce((a, b) => a.power > b.power ? a : b);
+        var tripleCandidates = solution.where((hand) => hand.type == HandType.triple && !hand.cards[0].isJoker).toList();
+        if (tripleCandidates.isEmpty) {
+          continue;
+        }
+        Hand maxTriple = tripleCandidates.reduce((a, b) => a.power > b.power ? a : b);
         maxTriple.add(wildCard);
         var b = checkBomb(maxTriple, numberOfDecks: _numberOfDecks);
         maxTriple.type = HandType.bomb;
@@ -142,7 +177,11 @@ class MinHandsCostEstimator implements CostEstimator {
 
     if (wildConfig[4] > 0) {
       for( var i = 0; i < wildConfig[4]; i++) {
-        Hand minBomb = solution.where((hand) => hand.type == HandType.bomb && !hand.cards[0].isJoker).reduce((a, b) => a.power < b.power ? a : b);
+        var bombCandidates = solution.where((hand) => hand.type == HandType.bomb && !hand.cards[0].isJoker).toList();
+        if (bombCandidates.isEmpty) {
+          continue;
+        }
+        Hand minBomb = bombCandidates.reduce((a, b) => a.power < b.power ? a : b);
         minBomb.add(wildCard);
         var b = checkBomb(minBomb, numberOfDecks: _numberOfDecks);
         minBomb.power = b.power;
